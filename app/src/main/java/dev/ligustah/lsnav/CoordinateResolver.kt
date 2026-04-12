@@ -54,4 +54,15 @@ class CoordinateResolver(private val context: Context, private val okHttpClient:
 
         null
     }
+
+    suspend fun searchLocalAddress(query: String): List<android.location.Address> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        try {
+            val geocoder = Geocoder(context, Locale.getDefault())
+            return@withContext geocoder.getFromLocationName(query, 5) ?: emptyList()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext emptyList()
+        }
+    }
 }

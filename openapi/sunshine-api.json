@@ -1,0 +1,1386 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Rescoot Sunshine API",
+    "description": "API for managing and controlling Rescoot electric scooters",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Rescoot Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Default API server"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "token"
+      }
+    },
+    "schemas": {
+      "ScooterBase": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the scooter"
+          },
+          "vin": {
+            "type": "string",
+            "description": "Vehicle identification number"
+          },
+          "color": {
+            "type": "string",
+            "description": "Color of the scooter"
+          },
+          "device_ids": {
+            "type": "object",
+            "description": "IDs of connected devices"
+          }
+        },
+        "required": ["name", "vin", "color"]
+      },
+      "Scooter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ScooterBase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "color_id": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["off", "stand-by", "ready_to_drive"]
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "kickstand": {
+                "type": "string"
+              },
+              "seatbox": {
+                "type": "string"
+              },
+              "blinkers": {
+                "type": "string",
+                "enum": ["off", "left", "right", "both"]
+              },
+              "speed": {
+                "type": "number",
+                "format": "float"
+              },
+              "odometer": {
+                "type": "number",
+                "format": "float"
+              },
+              "batteries": {
+                "type": "object",
+                "properties": {
+                  "battery0": {
+                    "$ref": "#/components/schemas/Battery"
+                  },
+                  "battery1": {
+                    "$ref": "#/components/schemas/Battery"
+                  },
+                  "aux": {
+                    "$ref": "#/components/schemas/Battery"
+                  },
+                  "cbb": {
+                    "$ref": "#/components/schemas/Battery"
+                  }
+                }
+              },
+              "location": {
+                "type": "object",
+                "properties": {
+                  "lat": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "lng": {
+                    "type": "number",
+                    "format": "float"
+                  }
+                }
+              },
+              "ble_mac": {
+                "type": "string"
+              },
+              "last_seen_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "alarm_state": {
+                "type": "string",
+                "nullable": true,
+                "description": "Current alarm state (armed, disarmed, trigger_level_1, trigger_level_2, etc.)"
+              },
+              "alarm_state_humanized": {
+                "type": "string",
+                "nullable": true,
+                "description": "Human-readable alarm state"
+              },
+              "alarm_triggered": {
+                "type": "boolean",
+                "description": "Whether alarm is currently triggered"
+              },
+              "alarm_state_updated_at": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "When alarm state was last updated"
+              }
+            }
+          }
+        ]
+      },
+      "Battery": {
+        "type": "object",
+        "properties": {
+          "present": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "voltage": {
+            "type": "number",
+            "format": "float"
+          },
+          "current": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "CommandResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["success", "error"]
+          },
+          "queued": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Destination": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude of the destination",
+            "example": 52.5254
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude of the destination",
+            "example": 13.4103
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "description": "Human-readable address (optional on set, resolved on get)",
+            "example": "Große Hamburger Str. 5-11, 10115 Berlin"
+          }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "TokenConfig": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "config": {
+            "type": "object",
+            "description": "Configuration for the scooter"
+          }
+        }
+      },
+      "RadioGagaVersion": {
+        "type": "object",
+        "properties": {
+          "update_available": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "checksum": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/scooters": {
+      "get": {
+        "summary": "List all user's scooters",
+        "description": "Returns a list of scooters belonging to the authenticated user",
+        "operationId": "listScooters",
+        "tags": ["Scooters"],
+        "responses": {
+          "200": {
+            "description": "A list of scooters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scooter"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing token"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new scooter",
+        "description": "Creates a new scooter entry and assigns ownership to the authenticated user",
+        "operationId": "createScooter",
+        "tags": ["Scooters"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scooter": {
+                    "$ref": "#/components/schemas/ScooterBase"
+                  }
+                },
+                "required": ["scooter"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created scooter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scooter"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get a specific scooter",
+        "description": "Returns detailed information about a specific scooter",
+        "operationId": "getScooter",
+        "tags": ["Scooters"],
+        "responses": {
+          "200": {
+            "description": "Scooter details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scooter"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a scooter",
+        "description": "Updates scooter information",
+        "operationId": "updateScooter",
+        "tags": ["Scooters"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scooter": {
+                    "$ref": "#/components/schemas/ScooterBase"
+                  }
+                },
+                "required": ["scooter"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated scooter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scooter"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a scooter",
+        "description": "Removes a scooter from the system",
+        "operationId": "deleteScooter",
+        "tags": ["Scooters"],
+        "responses": {
+          "204": {
+            "description": "Scooter deleted"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/generate_token": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Generate a new API token for a scooter",
+        "description": "Generates a new API token for a specific scooter and returns the token along with configuration",
+        "operationId": "generateScooterToken",
+        "tags": ["Scooters", "Authentication"],
+        "responses": {
+          "200": {
+            "description": "Scooter token and configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          }
+        }
+      }
+    },
+    "/scooters/{id}/lock": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Lock a scooter",
+        "description": "Sends a command to lock the scooter (go to standby and lock handlebar)",
+        "operationId": "lockScooter",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/unlock": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Unlock a scooter",
+        "description": "Sends a command to unlock the scooter (unlock handlebar and turn on)",
+        "operationId": "unlockScooter",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/blinkers": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Control blinkers",
+        "description": "Controls the scooter's blinker lights",
+        "operationId": "controlBlinkers",
+        "tags": ["Scooter Controls"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": ["off", "left", "right", "both"],
+                    "description": "Blinker state"
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/honk": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Honk horn",
+        "description": "Activates the scooter's horn",
+        "operationId": "honkHorn",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/play_sound": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Play sound",
+        "description": "Plays a sound on the scooter",
+        "operationId": "playSound",
+        "tags": ["Scooter Controls"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sound": {
+                    "type": "string",
+                    "enum": ["find_me", "alarm", "chirp"],
+                    "default": "chirp",
+                    "description": "Sound to play"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/open_seatbox": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Open seatbox",
+        "description": "Opens the scooter's seatbox",
+        "operationId": "openSeatbox",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/ping": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Ping scooter",
+        "description": "Sends a ping command to check scooter connectivity",
+        "operationId": "pingScooter",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/update_firmware": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Update firmware",
+        "description": "Initiates firmware update for the scooter",
+        "operationId": "updateFirmware",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/get_state": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Get scooter state",
+        "description": "Requests the current state from the scooter",
+        "operationId": "getScooterState",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/request_telemetry": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Request telemetry",
+        "description": "Requests the current telemetry from the scooter (alias for get_state)",
+        "operationId": "requestTelemetry",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/locate": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Locate scooter",
+        "description": "Sends a locate command to the scooter",
+        "operationId": "locateScooter",
+        "tags": ["Scooter Controls"],
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/alarm": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Trigger alarm",
+        "description": "Triggers the scooter's alarm",
+        "operationId": "triggerAlarm",
+        "tags": ["Scooter Controls"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "duration": {
+                    "type": "string",
+                    "default": "5s",
+                    "description": "Duration of the alarm"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{id}/destination": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get current navigation destination",
+        "description": "Returns the scooter's current navigation destination, if set",
+        "operationId": "getDestination",
+        "tags": ["Navigation"],
+        "responses": {
+          "200": {
+            "description": "Current destination (latitude/longitude/address will be null if no destination is set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Destination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient scope (requires scooter_control)"
+          },
+          "404": {
+            "description": "Scooter not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set navigation destination",
+        "description": "Sets a navigation destination on the scooter. The destination is persisted and a navigate command is sent to the scooter via MQTT.",
+        "operationId": "setDestination",
+        "tags": ["Navigation"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Destination"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Destination set and command sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient scope (requires scooter_control)"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Invalid coordinates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear navigation destination",
+        "description": "Clears the scooter's current navigation destination and sends a clear command to the scooter",
+        "operationId": "clearDestination",
+        "tags": ["Navigation"],
+        "responses": {
+          "200": {
+            "description": "Destination cleared and command sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient scope (requires scooter_control)"
+          },
+          "404": {
+            "description": "Scooter not found"
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scooters/{vin}/config": {
+      "parameters": [
+        {
+          "name": "vin",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Scooter VIN (Vehicle Identification Number)"
+        }
+      ],
+      "get": {
+        "summary": "Get scooter configuration by VIN",
+        "description": "Returns configuration for a scooter using its VIN",
+        "operationId": "getScooterConfigByVin",
+        "tags": ["Scooters"],
+        "responses": {
+          "200": {
+            "description": "Scooter configuration in YAML format",
+            "content": {
+              "application/x-yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Scooter not found"
+          }
+        }
+      }
+    },
+    "/radio_gaga/check_version": {
+      "get": {
+        "summary": "Check for firmware updates",
+        "description": "Checks if a firmware update is available for a given platform",
+        "operationId": "checkRadioGagaVersion",
+        "tags": ["Firmware"],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "arm64"
+            },
+            "description": "Platform identifier"
+          },
+          {
+            "name": "current_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Current firmware version"
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "description": "Version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadioGagaVersion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/radio_gaga/download/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": "Version ID"
+        }
+      ],
+      "get": {
+        "summary": "Download firmware",
+        "description": "Downloads a specific firmware version",
+        "operationId": "downloadRadioGaga",
+        "tags": ["Firmware"],
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirect to download URL"
+          },
+          "404": {
+            "description": "Version not found"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Scooters",
+      "description": "Operations related to scooter management"
+    },
+    {
+      "name": "Scooter Controls",
+      "description": "Operations to control scooter functions"
+    },
+    {
+      "name": "Navigation",
+      "description": "Operations for managing scooter navigation destinations"
+    },
+    {
+      "name": "Authentication",
+      "description": "Authentication-related operations"
+    },
+    {
+      "name": "Firmware",
+      "description": "Operations related to firmware management"
+    }
+  ]
+}

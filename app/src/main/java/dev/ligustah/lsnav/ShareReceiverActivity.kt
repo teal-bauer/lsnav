@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import dev.ligustah.lsnav.api.generated.models.Destination
+import dev.ligustah.lsnav.api.generated.models.DestinationInput
 
 class ShareReceiverActivity : Activity() {
 
@@ -45,7 +45,7 @@ class ShareReceiverActivity : Activity() {
                     if (scooterId != null && token != null) {
                         val api = ApiClientProvider(baseUrl, token).getNavigationApi()
                         withContext(Dispatchers.IO) {
-                            val dest = Destination(
+                            val dest = DestinationInput(
                                 latitude = coords.latitude,
                                 longitude = coords.longitude
                             )

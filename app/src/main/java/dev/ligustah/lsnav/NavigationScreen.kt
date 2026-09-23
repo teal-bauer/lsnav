@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.ligustah.lsnav.api.generated.models.Destination
+import dev.ligustah.lsnav.api.generated.models.DestinationInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -53,7 +54,7 @@ fun NavigationScreen(appSettings: AppSettings) {
             val api = ApiClientProvider(baseUrl!!, token!!).getNavigationApi()
             currentDestination = withContext(Dispatchers.IO) { api.getDestination(safeScooterId) }
         } catch (e: Exception) {
-            // Ignore init errors
+            errorMessage = "Failed to load destination: ${e.message}"
         } finally {
             isFetching = false
         }
@@ -80,7 +81,7 @@ fun NavigationScreen(appSettings: AppSettings) {
                 
                 if (isFetching && currentDestination == null) {
                     CircularProgressIndicator()
-                } else if (currentDestination != null) {
+                } else if (currentDestination?.latitude != null && currentDestination?.longitude != null) {
                     Text("Lat: ${currentDestination?.latitude}")
                     Text("Lng: ${currentDestination?.longitude}")
                     if (currentDestination?.address != null) {
@@ -141,10 +142,10 @@ fun NavigationScreen(appSettings: AppSettings) {
                                         try {
                                             isFetching = true
                                             errorMessage = null
-                                            val newDest = Destination(latitude = address.latitude, longitude = address.longitude, address = addressString)
+                                            val newDest = DestinationInput(latitude = address.latitude, longitude = address.longitude, address = addressString)
                                             val api = ApiClientProvider(baseUrl!!, token!!).getNavigationApi()
                                             withContext(Dispatchers.IO) { api.setDestination(safeScooterId, newDest) }
-                                            currentDestination = newDest
+                                            currentDestination = Destination(latitude = newDest.latitude, longitude = newDest.longitude, address = newDest.address)
                                             destinationInputText = ""
                                             searchResults = emptyList()
                                         } catch (e: Exception) {

@@ -188,6 +188,12 @@
           }
         }
       },
+      "SimpleStatus": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["success"] }
+        }
+      },
       "Destination": {
         "type": "object",
         "properties": {
@@ -196,16 +202,18 @@
             "format": "double",
             "minimum": -90,
             "maximum": 90,
-            "description": "Latitude of the destination",
-            "example": 52.5254
+            "description": "Latitude of the destination, null when no destination is set",
+            "example": 52.5254,
+            "nullable": true
           },
           "longitude": {
             "type": "number",
             "format": "double",
             "minimum": -180,
             "maximum": 180,
-            "description": "Longitude of the destination",
-            "example": 13.4103
+            "description": "Longitude of the destination, null when no destination is set",
+            "example": 13.4103,
+            "nullable": true
           },
           "address": {
             "type": "string",
@@ -213,20 +221,28 @@
             "description": "Human-readable address (optional on set, resolved on get)",
             "example": "Große Hamburger Str. 5-11, 10115 Berlin"
           }
-        },
-        "required": ["latitude", "longitude"]
+        }
+      },
+      "DestinationInput": {
+        "type": "object",
+        "required": ["latitude", "longitude"],
+        "properties": {
+          "latitude": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 },
+          "longitude": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 },
+          "address": { "type": "string", "nullable": true }
+        }
       },
       "Error": {
         "type": "object",
         "properties": {
-          "errors": {
+          "error": {
             "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "details": { "type": "object", "additionalProperties": true, "nullable": true }
+            },
+            "required": ["code", "message"]
           }
         }
       },
@@ -1124,12 +1140,12 @@
       ],
       "get": {
         "summary": "Get current navigation destination",
-        "description": "Returns the scooter's current navigation destination, if set",
+        "description": "Returns the current destination, or null coordinate fields if none is set. Requires read scope and permission to view the scooter's location.",
         "operationId": "getDestination",
         "tags": ["Navigation"],
         "responses": {
           "200": {
-            "description": "Current destination (latitude/longitude/address will be null if no destination is set)",
+            "description": "Current destination; latitude and longitude are null when none is set",
             "content": {
               "application/json": {
                 "schema": {
@@ -1142,7 +1158,12 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Insufficient scope (requires scooter_control)"
+            "description": "Insufficient scope or location permission",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
           },
           "404": {
             "description": "Scooter not found"
@@ -1151,7 +1172,7 @@
       },
       "put": {
         "summary": "Set navigation destination",
-        "description": "Sets a navigation destination on the scooter. The destination is persisted and a navigate command is sent to the scooter via MQTT.",
+        "description": "Sets a navigation destination. Requires scooter_control scope and permission for essential use. The destination is persisted and a navigate command is sent via MQTT.",
         "operationId": "setDestination",
         "tags": ["Navigation"],
         "requestBody": {
@@ -1159,7 +1180,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Destination"
+                "$ref": "#/components/schemas/DestinationInput"
               }
             }
           }
@@ -1170,7 +1191,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommandResponse"
+                  "$ref": "#/components/schemas/SimpleStatus"
                 }
               }
             }
@@ -1179,23 +1200,21 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Insufficient scope (requires scooter_control)"
+            "description": "Insufficient scope or scooter permission",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
           },
           "404": {
             "description": "Scooter not found"
           },
           "422": {
-            "description": "Invalid coordinates",
+            "description": "Invalid coordinates or command dispatch failure",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "schema": { "$ref": "#/components/schemas/Error" }
               }
             }
           }
@@ -1203,7 +1222,7 @@
       },
       "delete": {
         "summary": "Clear navigation destination",
-        "description": "Clears the scooter's current navigation destination and sends a clear command to the scooter",
+        "description": "Clears the current destination. Requires scooter_control scope and permission for essential use.",
         "operationId": "clearDestination",
         "tags": ["Navigation"],
         "responses": {
@@ -1212,7 +1231,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommandResponse"
+                  "$ref": "#/components/schemas/SimpleStatus"
                 }
               }
             }
@@ -1221,23 +1240,21 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Insufficient scope (requires scooter_control)"
+            "description": "Insufficient scope or scooter permission",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
           },
           "404": {
             "description": "Scooter not found"
           },
           "422": {
-            "description": "Unprocessable Entity",
+            "description": "Command dispatch failed",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "schema": { "$ref": "#/components/schemas/Error" }
               }
             }
           }

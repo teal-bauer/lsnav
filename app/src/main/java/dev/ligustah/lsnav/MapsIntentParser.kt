@@ -6,16 +6,6 @@ import android.util.Patterns
 object MapsIntentParser {
 
     fun extractCoordinates(uri: Uri): Coordinates? {
-        // .../maps/place/.../@52.52,13.41,17z/...
-        uri.pathSegments.find { it.startsWith("@") }?.let { segment ->
-            val parts = segment.removePrefix("@").split(",")
-            if (parts.size >= 2) {
-                val lat = parts[0].toDoubleOrNull()
-                val lon = parts[1].toDoubleOrNull()
-                if (lat != null && lon != null) return Coordinates(lat, lon)
-            }
-        }
-
         // .../maps/search/?query=52.52,13.41
         uri.getQueryParameter("query")?.let { query ->
             val parts = query.split(",")
@@ -26,14 +16,34 @@ object MapsIntentParser {
             }
         }
 
-        // .../maps?q=52.52,13.41
-        // Look for data=! parameter FIRST because routes embed exact destinations here
-        // rather than the user's starting point which often ends up naked in the URL path.
+        // Route waypoints use 1d=longitude, 2d=latitude. The last pair is the destination.
         uri.pathSegments.find { it.startsWith("data=") }?.let { dataSegment ->
+            if ("dir" in uri.pathSegments) {
+                val waypoint = Regex("!1d(-?\\d+(?:\\.\\d+)?)!2d(-?\\d+(?:\\.\\d+)?)")
+                    .findAll(dataSegment).mapNotNull { match ->
+                        val lon = match.groupValues[1].toDoubleOrNull()
+                        val lat = match.groupValues[2].toDoubleOrNull()
+                        if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
+                            Coordinates(lat, lon)
+                        } else null
+                    }.lastOrNull()
+                if (waypoint != null) return waypoint
+            }
+
             val rootNode = parseGoogleMapsData(dataSegment)
             if (rootNode != null) {
                 val coords = findCoordinatesInTree(rootNode)
                 if (coords != null) return coords
+            }
+        }
+
+        // The @ coordinates describe the map viewport, not necessarily the destination.
+        uri.pathSegments.find { it.startsWith("@") }?.let { segment ->
+            val parts = segment.removePrefix("@").split(",")
+            if (parts.size >= 2) {
+                val lat = parts[0].toDoubleOrNull()
+                val lon = parts[1].toDoubleOrNull()
+                if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
             }
         }
 

@@ -4,7 +4,6 @@ import dev.ligustah.lsnav.api.generated.apis.NavigationApi
 import dev.ligustah.lsnav.api.generated.apis.ScootersApi
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 
 class ApiClientProvider(private val baseUrl: String, private val token: String?) {
     
@@ -17,13 +16,8 @@ class ApiClientProvider(private val baseUrl: String, private val token: String?)
             chain.proceed(requestBuilder.build())
         }
 
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
-
         OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
-            .addInterceptor(loggingInterceptor)
             .build()
     }
 

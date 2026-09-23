@@ -25,18 +25,17 @@ class AppSettings(private val context: Context) {
     val scooterId: Flow<Long?> = context.dataStore.data.map { it[SCOOTER_ID_KEY] }
     val scooterName: Flow<String?> = context.dataStore.data.map { it[SCOOTER_NAME_KEY] }
 
-    suspend fun saveToken(token: String) {
-        context.dataStore.edit { it[TOKEN_KEY] = token }
-    }
-
-    suspend fun saveBaseUrl(url: String) {
-        context.dataStore.edit { it[BASE_URL_KEY] = url }
-    }
-
-    suspend fun saveScooter(id: Long, name: String) {
+    suspend fun saveSettings(token: String, baseUrl: String, scooterId: Long?, scooterName: String) {
         context.dataStore.edit {
-            it[SCOOTER_ID_KEY] = id
-            it[SCOOTER_NAME_KEY] = name
+            it[TOKEN_KEY] = token
+            it[BASE_URL_KEY] = baseUrl
+            if (scooterId == null) {
+                it.remove(SCOOTER_ID_KEY)
+                it.remove(SCOOTER_NAME_KEY)
+            } else {
+                it[SCOOTER_ID_KEY] = scooterId
+                it[SCOOTER_NAME_KEY] = scooterName
+            }
         }
     }
 }

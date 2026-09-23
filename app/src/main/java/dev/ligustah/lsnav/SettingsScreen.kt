@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,7 +36,15 @@ fun SettingsScreen(appSettings: AppSettings) {
 
         OutlinedTextField(
             value = baseUrl,
-            onValueChange = { baseUrl = it },
+            onValueChange = {
+                if (it != baseUrl) {
+                    baseUrl = it
+                    scooters = emptyList()
+                    selectedScooterId = null
+                    selectedScooterName = ""
+                    successMessage = null
+                }
+            },
             label = { Text("Base URL") },
             modifier = Modifier.fillMaxWidth()
         )
@@ -44,7 +53,16 @@ fun SettingsScreen(appSettings: AppSettings) {
 
         OutlinedTextField(
             value = token,
-            onValueChange = { token = it },
+            onValueChange = {
+                if (it != token) {
+                    token = it
+                    scooters = emptyList()
+                    selectedScooterId = null
+                    selectedScooterName = ""
+                    successMessage = null
+                }
+            },
+            visualTransformation = PasswordVisualTransformation(),
             label = { Text("API Token") },
             modifier = Modifier.fillMaxWidth()
         )
@@ -55,17 +73,23 @@ fun SettingsScreen(appSettings: AppSettings) {
             onClick = {
                 isFetching = true
                 errorMessage = null
+                scooters = emptyList()
+                val requestedToken = token
+                val requestedBaseUrl = baseUrl
                 coroutineScope.launch {
                     try {
-                        val api = ApiClientProvider(baseUrl, token).getScootersApi()
-                        val result = withContext(Dispatchers.IO) {
-                            api.listScooters()
+                        val api = ApiClientProvider(requestedBaseUrl, requestedToken).getScootersApi()
+                        val result = withContext(Dispatchers.IO) { api.listScooters() }
+                        if (token == requestedToken && baseUrl == requestedBaseUrl) {
+                            scooters = result
+                            if (result.none { it.id == selectedScooterId }) {
+                                selectedScooterId = null
+                                selectedScooterName = ""
+                            }
                         }
-                        scooters = result
-                        isFetching = false
                     } catch (e: Exception) {
-                        e.printStackTrace()
                         errorMessage = "Failed to fetch scooters: ${e.message}"
+                    } finally {
                         isFetching = false
                     }
                 }
@@ -105,12 +129,12 @@ fun SettingsScreen(appSettings: AppSettings) {
         Button(
             onClick = {
                 coroutineScope.launch {
-                    appSettings.saveToken(token)
-                    appSettings.saveBaseUrl(baseUrl)
-                    selectedScooterId?.let { id ->
-                        appSettings.saveScooter(id, selectedScooterName)
+                    try {
+                        appSettings.saveSettings(token.trim(), baseUrl.trim(), selectedScooterId, selectedScooterName)
+                        successMessage = "Settings saved!"
+                    } catch (e: Exception) {
+                        errorMessage = "Failed to save settings: ${e.message}"
                     }
-                    successMessage = "Settings saved!"
                 }
             },
             modifier = Modifier.fillMaxWidth()

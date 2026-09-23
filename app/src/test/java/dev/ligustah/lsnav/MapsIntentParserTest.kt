@@ -35,6 +35,26 @@ class MapsIntentParserTest {
     }
 
     @Test
+    fun `extractCoordinates prefers q destination over map viewport`() {
+        val uri = Uri.parse("https://www.google.com/maps/@52.52,13.41,17z?q=48.137,11.576")
+        val coords = MapsIntentParser.extractCoordinates(uri)
+        assertEquals(48.137, coords?.latitude)
+        assertEquals(11.576, coords?.longitude)
+    }
+
+    @Test
+    fun `extractCoordinates rejects out of range query coordinates`() {
+        val uri = Uri.parse("https://www.google.com/maps/search/?query=91,181")
+        assertNull(MapsIntentParser.extractCoordinates(uri))
+    }
+
+    @Test
+    fun `extractCoordinates rejects out of range q coordinates`() {
+        val uri = Uri.parse("https://www.google.com/maps?q=91,181")
+        assertNull(MapsIntentParser.extractCoordinates(uri))
+    }
+
+    @Test
     fun `extractCoordinates returns null for invalid coordinates in query`() {
         val uri = Uri.parse("http://maps.google.com/maps?q=berlin,germany")
         val coords = MapsIntentParser.extractCoordinates(uri)

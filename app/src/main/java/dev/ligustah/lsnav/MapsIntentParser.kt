@@ -12,7 +12,7 @@ object MapsIntentParser {
             if (parts.size >= 2) {
                 val lat = parts[0].toDoubleOrNull()
                 val lon = parts[1].toDoubleOrNull()
-                if (lat != null && lon != null) return Coordinates(lat, lon)
+                if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
             }
         }
 
@@ -37,6 +37,14 @@ object MapsIntentParser {
             }
         }
 
+        val q = uri.getQueryParameter("q")
+        if (q != null) {
+            val coords = q.split(",")
+            val lat = coords.getOrNull(0)?.toDoubleOrNull()
+            val lon = coords.getOrNull(1)?.toDoubleOrNull()
+            if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
+        }
+
         // The @ coordinates describe the map viewport, not necessarily the destination.
         uri.pathSegments.find { it.startsWith("@") }?.let { segment ->
             val parts = segment.removePrefix("@").split(",")
@@ -45,14 +53,6 @@ object MapsIntentParser {
                 val lon = parts[1].toDoubleOrNull()
                 if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
             }
-        }
-
-        val q = uri.getQueryParameter("q")
-        if (q != null) {
-            val coords = q.split(",")
-            val lat = coords.getOrNull(0)?.toDoubleOrNull()
-            val lon = coords.getOrNull(1)?.toDoubleOrNull()
-            if (lat != null && lon != null) return Coordinates(lat, lon)
         }
 
         // .../maps/place/52.441733,13.418110/...

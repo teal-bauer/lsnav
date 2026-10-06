@@ -48,7 +48,7 @@
             "description": "IDs of connected devices"
           }
         },
-        "required": ["name", "vin", "color"]
+        "required": ["name"]
       },
       "Scooter": {
         "allOf": [
@@ -67,7 +67,8 @@
               },
               "state": {
                 "type": "string",
-                "enum": ["off", "stand-by", "ready_to_drive"]
+                "nullable": true,
+                "description": "Vehicle state reported by firmware; clients must accept additional states"
               },
               "online": {
                 "type": "boolean"
@@ -80,7 +81,7 @@
               },
               "blinkers": {
                 "type": "string",
-                "enum": ["off", "left", "right", "both"]
+                "nullable": true
               },
               "speed": {
                 "type": "number",

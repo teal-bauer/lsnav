@@ -10,7 +10,17 @@ import kotlinx.coroutines.flow.map
 
 val Context.dataStore by preferencesDataStore(name = "settings")
 
-class AppSettings(private val context: Context) {
+data class AppConfiguration(
+    val token: String = "",
+    val baseUrl: String = AppSettings.DEFAULT_BASE_URL,
+    val scooterId: Long? = null,
+    val scooterName: String = ""
+) {
+    val isReady: Boolean get() = token.isNotBlank() && scooterId != null
+}
+
+class AppSettings(context: Context) {
+    private val context = context.applicationContext
     companion object {
         val TOKEN_KEY = stringPreferencesKey("api_token")
         val BASE_URL_KEY = stringPreferencesKey("base_url")
@@ -18,6 +28,10 @@ class AppSettings(private val context: Context) {
         val SCOOTER_NAME_KEY = stringPreferencesKey("scooter_name")
         
         const val DEFAULT_BASE_URL = "https://sunshine.rescoot.org"
+    }
+
+    val configuration: Flow<AppConfiguration> = context.dataStore.data.map {
+        AppConfiguration(it[TOKEN_KEY] ?: "", it[BASE_URL_KEY] ?: DEFAULT_BASE_URL, it[SCOOTER_ID_KEY], it[SCOOTER_NAME_KEY] ?: "")
     }
 
     val token: Flow<String?> = context.dataStore.data.map { it[TOKEN_KEY] }

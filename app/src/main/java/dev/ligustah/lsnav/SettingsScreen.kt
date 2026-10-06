@@ -1,149 +1,40 @@
 package dev.ligustah.lsnav
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import dev.ligustah.lsnav.api.generated.models.Scooter
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun SettingsScreen(appSettings: AppSettings) {
-    val coroutineScope = rememberCoroutineScope()
-    
-    val initialToken by appSettings.token.collectAsState(initial = "")
-    val initialBaseUrl by appSettings.baseUrl.collectAsState(initial = AppSettings.DEFAULT_BASE_URL)
-    val initialScooterId by appSettings.scooterId.collectAsState(initial = null)
-    val initialScooterName by appSettings.scooterName.collectAsState(initial = "")
-
-    var token by remember(initialToken) { mutableStateOf(initialToken ?: "") }
-    var baseUrl by remember(initialBaseUrl) { mutableStateOf(initialBaseUrl) }
-    var scooters by remember { mutableStateOf<List<Scooter>>(emptyList()) }
-    var selectedScooterId by remember(initialScooterId) { mutableStateOf<Long?>(initialScooterId) }
-    var selectedScooterName by remember(initialScooterName) { mutableStateOf<String>(initialScooterName ?: "") }
-
-    var isFetching by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var successMessage by remember { mutableStateOf<String?>(null) }
-
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("Librescoot Navigation Settings", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = {
-                if (it != baseUrl) {
-                    baseUrl = it
-                    scooters = emptyList()
-                    selectedScooterId = null
-                    selectedScooterName = ""
-                    successMessage = null
-                }
-            },
-            label = { Text("Base URL") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = token,
-            onValueChange = {
-                if (it != token) {
-                    token = it
-                    scooters = emptyList()
-                    selectedScooterId = null
-                    selectedScooterName = ""
-                    successMessage = null
-                }
-            },
-            visualTransformation = PasswordVisualTransformation(),
-            label = { Text("API Token") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = {
-                isFetching = true
-                errorMessage = null
-                scooters = emptyList()
-                val requestedToken = token
-                val requestedBaseUrl = baseUrl
-                coroutineScope.launch {
-                    try {
-                        val api = ApiClientProvider(requestedBaseUrl, requestedToken).getScootersApi()
-                        val result = withContext(Dispatchers.IO) { api.listScooters() }
-                        if (token == requestedToken && baseUrl == requestedBaseUrl) {
-                            scooters = result
-                            if (result.none { it.id == selectedScooterId }) {
-                                selectedScooterId = null
-                                selectedScooterName = ""
-                            }
-                        }
-                    } catch (e: Exception) {
-                        errorMessage = "Failed to fetch scooters: ${e.message}"
-                    } finally {
-                        isFetching = false
-                    }
-                }
-            },
-            enabled = token.isNotEmpty() && baseUrl.isNotEmpty() && !isFetching,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (isFetching) "Fetching..." else "Fetch Scooters")
-        }
-
-        if (errorMessage != null) {
-            Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (scooters.isNotEmpty()) {
-            Text("Select Scooter:")
-            scooters.forEach { scooter ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    RadioButton(
-                        selected = scooter.id == selectedScooterId,
-                        onClick = {
-                            selectedScooterId = scooter.id
-                            selectedScooterName = scooter.name ?: "Unknown"
-                        }
-                    )
-                    Text(scooter.name ?: "Unknown Scooter ID: ${scooter.id}", modifier = Modifier.padding(start = 8.dp, top = 12.dp))
-                }
+fun SettingsScreen(model: SettingsViewModel = viewModel()) {
+    val state by model.state.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Librescoot Navigation Settings", style = MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(state.draft.baseUrl, model::updateUrl, label = { Text("HTTPS server URL") },
+            enabled = !state.loading && !state.saving, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(state.draft.token, model::updateToken, label = { Text("API token") },
+            visualTransformation = PasswordVisualTransformation(), enabled = !state.loading && !state.saving,
+            singleLine = true, modifier = Modifier.fillMaxWidth())
+        Button(onClick = model::fetch, enabled = !state.loading && !state.saving && state.draft.token.isNotBlank()) { Text("Fetch scooters / retry") }
+        if (state.loading || state.saving) CircularProgressIndicator()
+        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (state.scooters.isNotEmpty()) Text("Select scooter:")
+        state.scooters.forEach { scooter ->
+            Row(Modifier.fillMaxWidth()) {
+                RadioButton(selected = scooter.id == state.draft.scooterId,
+                    onClick = { model.select(scooter) }, enabled = !state.saving && scooter.id != null)
+                Text(scooter.name, Modifier.padding(top = 12.dp))
             }
-        } else if (selectedScooterName.isNotEmpty()) {
-            Text("Selected: $selectedScooterName")
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(
-            onClick = {
-                coroutineScope.launch {
-                    try {
-                        appSettings.saveSettings(token.trim(), baseUrl.trim(), selectedScooterId, selectedScooterName)
-                        successMessage = "Settings saved!"
-                    } catch (e: Exception) {
-                        errorMessage = "Failed to save settings: ${e.message}"
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Save")
-        }
-
-        if (successMessage != null) {
-            Text(successMessage!!, color = MaterialTheme.colorScheme.primary)
-        }
+        if (state.draft.scooterId != null) Text("Selected: ${state.draft.scooterName}")
+        Button(onClick = model::save, enabled = !state.loading && !state.saving, modifier = Modifier.fillMaxWidth()) { Text("Save") }
+        state.message?.let { Text(it) }
     }
 }

@@ -13,11 +13,9 @@ import org.robolectric.annotation.Config
 class MapsIntentParserTest {
 
     @Test
-    fun `extractCoordinates extracts from place path segment`() {
+    fun `viewport coordinates are not a destination`() {
         val uri = Uri.parse("https://www.google.com/maps/place/Berlin/@52.520008,13.404954,17z/data=...")
-        val coords = MapsIntentParser.extractCoordinates(uri)
-        assertEquals(52.520008, coords?.latitude)
-        assertEquals(13.404954, coords?.longitude)
+        assertNull(MapsIntentParser.extractCoordinates(uri))
     }
 
     @Test
@@ -117,6 +115,38 @@ class MapsIntentParserTest {
         val coords = MapsIntentParser.extractCoordinates(uri)
         assertEquals(59.6099005, coords?.latitude)
         assertEquals(16.5448091, coords?.longitude)
+    }
+
+    @Test
+    fun `explicit place coordinates outrank viewport`() {
+        val uri = Uri.parse("https://www.google.com/maps/place/48.137,11.576/@52.52,13.41,17z")
+        assertEquals(48.137, MapsIntentParser.extractCoordinates(uri)?.latitude)
+    }
+
+    @Test
+    fun `geo URI supports coordinates and labelled query`() {
+        assertEquals(Coordinates(52.52, 13.41), MapsIntentParser.extractCoordinates(Uri.parse("geo:52.52,13.41")))
+        assertEquals(Coordinates(48.137, 11.576), MapsIntentParser.extractCoordinates(Uri.parse("geo:0,0?q=48.137,11.576(Munich)")))
+        assertNull(MapsIntentParser.extractCoordinates(Uri.parse("geo:0,0?q=Alexanderplatz")))
+        assertEquals("Alexanderplatz", MapsIntentParser.extractPlaceName(Uri.parse("geo:0,0?q=Alexanderplatz")))
+    }
+
+    @Test
+    fun `place names are decoded once`() {
+        assertEquals("100% Coffee", MapsIntentParser.extractPlaceName(Uri.parse("https://www.google.com/maps/place/100%25+Coffee")))
+        assertEquals("C++", MapsIntentParser.extractPlaceName(Uri.parse("https://www.google.com/maps?q=C%2B%2B")))
+    }
+
+    @Test
+    fun `Google direction destination query is supported`() {
+        assertEquals(Coordinates(48.137, 11.576), MapsIntentParser.extractCoordinates(Uri.parse("https://www.google.com/maps/dir/?api=1&destination=48.137,11.576")))
+    }
+
+    @Test
+    fun `parser bounds untrusted input and rejects nonfinite coordinates`() {
+        assertNull(MapsIntentParser.extractCoordinates(Uri.parse("https://www.google.com/maps/data=" + "!1m999999".repeat(3000))))
+        assertNull(MapsIntentParser.parsePair("NaN,13"))
+        assertNull(MapsIntentParser.parsePair("Infinity,13"))
     }
 
     @Test

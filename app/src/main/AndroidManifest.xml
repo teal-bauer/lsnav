@@ -28,7 +28,7 @@
         <activity
             android:name=".ShareReceiverActivity"
             android:exported="true"
-            android:theme="@style/Theme.LibrescootNavigation.Transparent">
+            android:theme="@style/Theme.LibrescootNavigation">
             <!-- Share target for Maps -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

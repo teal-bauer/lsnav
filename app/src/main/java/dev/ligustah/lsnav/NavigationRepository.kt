@@ -1,0 +1,75 @@
+package dev.ligustah.lsnav
+
+import dev.ligustah.lsnav.api.generated.models.Destination
+import dev.ligustah.lsnav.api.generated.models.DestinationInput
+import dev.ligustah.lsnav.api.generated.models.Scooter
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.openapitools.client.infrastructure.ClientException
+import org.openapitools.client.infrastructure.ServerException
+import java.io.IOException
+import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+interface NavigationGateway {
+    suspend fun scooters(configuration: AppConfiguration): List<Scooter>
+    suspend fun destination(configuration: AppConfiguration): Destination
+    suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult)
+    suspend fun clearDestination(configuration: AppConfiguration)
+}
+
+class NavigationRepository(
+    private val providerFactory: (AppConfiguration) -> ApiClientProvider = { ApiClientProvider(it.baseUrl, it.token) }
+) : NavigationGateway {
+    override suspend fun scooters(configuration: AppConfiguration) = request(configuration) { it.getScootersApi().listScooters() }
+    override suspend fun destination(configuration: AppConfiguration) = request(configuration) {
+        it.getNavigationApi().getDestination(requireNotNull(configuration.scooterId))
+    }
+    override suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult) {
+        require(place.coordinates.isValid()) { "Invalid destination coordinates" }
+        request(configuration) {
+            it.getNavigationApi().setDestination(requireNotNull(configuration.scooterId),
+                DestinationInput(place.coordinates.latitude, place.coordinates.longitude, place.label))
+        }
+    }
+    override suspend fun clearDestination(configuration: AppConfiguration) {
+        request(configuration) { it.getNavigationApi().clearDestination(requireNotNull(configuration.scooterId)) }
+    }
+
+    private suspend fun <T> request(configuration: AppConfiguration, block: (ApiClientProvider) -> T): T {
+        val provider = providerFactory(configuration)
+        return suspendCancellableCoroutine { continuation ->
+            val task = executor.submit {
+                try {
+                    val result = block(provider)
+                    if (continuation.isActive) continuation.resume(result)
+                } catch (error: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            }
+            continuation.invokeOnCancellation {
+                provider.cancel()
+                task.cancel(true)
+            }
+        }
+    }
+
+    companion object {
+        private val executor = Executors.newFixedThreadPool(4)
+    }
+}
+
+fun userMessage(error: Exception): String = when (error) {
+    is ClientException -> when (error.statusCode) {
+        401 -> "Your API token is expired or invalid. Update it in Settings."
+        403 -> "This token or account lacks permission for this scooter. Check its sharing permissions."
+        404 -> "The scooter was not found. Fetch and select it again in Settings."
+        422 -> "The destination or command could not be accepted. Check the coordinates and scooter connectivity."
+        429 -> "Too many requests. Wait a moment and retry."
+        else -> "The server rejected the request. Check Settings and retry."
+    }
+    is ServerException -> "The server is unavailable. Please retry later."
+    is IllegalArgumentException -> error.message ?: "Check the input and retry."
+    is IOException -> "Unable to connect or resolve this location. Check the network and retry."
+    else -> "The request failed. Please retry."
+}

@@ -4,179 +4,88 @@ import android.net.Uri
 import android.util.Patterns
 
 object MapsIntentParser {
+    const val MAX_INPUT_LENGTH = 16_384
+    private val pair = Regex("^\\s*([-+]?\\d+(?:\\.\\d+)?)\\s*,\\s*([-+]?\\d+(?:\\.\\d+)?)(?:\\s*\\([^)]*\\))?\\s*$")
+    private val routePair = Regex("!1d([-+]?\\d+(?:\\.\\d+)?)!2d([-+]?\\d+(?:\\.\\d+)?)(?=!|$)")
+    private val pinPair = Regex("!3d([-+]?\\d+(?:\\.\\d+)?)!4d([-+]?\\d+(?:\\.\\d+)?)(?=!|$)")
+
+    fun parsePair(text: String): Coordinates? {
+        val match = pair.matchEntire(text) ?: return null
+        return coordinates(match.groupValues[1], match.groupValues[2])
+    }
+
+    private fun coordinates(lat: String, lon: String): Coordinates? {
+        val latitude = lat.toDoubleOrNull() ?: return null
+        val longitude = lon.toDoubleOrNull() ?: return null
+        return Coordinates(latitude, longitude).takeIf { it.isValid() }
+    }
 
     fun extractCoordinates(uri: Uri): Coordinates? {
-        // .../maps/search/?query=52.52,13.41
-        uri.getQueryParameter("query")?.let { query ->
-            val parts = query.split(",")
-            if (parts.size >= 2) {
-                val lat = parts[0].toDoubleOrNull()
-                val lon = parts[1].toDoubleOrNull()
-                if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
-            }
+        if (uri.toString().length > MAX_INPUT_LENGTH) return null
+        if (uri.scheme == "geo") {
+            val value = uri.encodedSchemeSpecificPart
+            val query = value.substringAfter('?', "")
+            val q = Uri.parse("https://geo.invalid/?$query").getQueryParameter("q")
+            if (q != null) return parsePair(q)
+            return parsePair(value.substringBefore('?').substringBefore(';'))
         }
-
-        // Route waypoints use 1d=longitude, 2d=latitude. The last pair is the destination.
-        uri.pathSegments.find { it.startsWith("data=") }?.let { dataSegment ->
+        if (!uri.isHierarchical) return null
+        for (key in listOf("destination", "query", "q")) {
+            uri.getQueryParameter(key)?.let { parsePair(it)?.let { result -> return result } }
+        }
+        val data = uri.pathSegments.firstOrNull { it.startsWith("data=") }
+            ?: uri.getQueryParameter("data")
+        if (data != null) {
             if ("dir" in uri.pathSegments) {
-                val waypoint = Regex("!1d(-?\\d+(?:\\.\\d+)?)!2d(-?\\d+(?:\\.\\d+)?)")
-                    .findAll(dataSegment).mapNotNull { match ->
-                        val lon = match.groupValues[1].toDoubleOrNull()
-                        val lat = match.groupValues[2].toDoubleOrNull()
-                        if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
-                            Coordinates(lat, lon)
-                        } else null
-                    }.lastOrNull()
-                if (waypoint != null) return waypoint
-            }
-
-            val rootNode = parseGoogleMapsData(dataSegment)
-            if (rootNode != null) {
-                val coords = findCoordinatesInTree(rootNode)
-                if (coords != null) return coords
-            }
-        }
-
-        val q = uri.getQueryParameter("q")
-        if (q != null) {
-            val coords = q.split(",")
-            val lat = coords.getOrNull(0)?.toDoubleOrNull()
-            val lon = coords.getOrNull(1)?.toDoubleOrNull()
-            if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
-        }
-
-        // The @ coordinates describe the map viewport, not necessarily the destination.
-        uri.pathSegments.find { it.startsWith("@") }?.let { segment ->
-            val parts = segment.removePrefix("@").split(",")
-            if (parts.size >= 2) {
-                val lat = parts[0].toDoubleOrNull()
-                val lon = parts[1].toDoubleOrNull()
-                if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) return Coordinates(lat, lon)
-            }
-        }
-
-        // .../maps/place/52.441733,13.418110/...
-        uri.pathSegments.forEach { segment ->
-            val parts = segment.split(",")
-            if (parts.size == 2) {
-                val lat = parts[0].toDoubleOrNull()
-                val lon = parts[1].toDoubleOrNull()
-                if (lat != null && lon != null && lat >= -90.0 && lat <= 90.0 && lon >= -180.0 && lon <= 180.0) {
-                    return Coordinates(lat, lon)
+                routePair.findAll(data).lastOrNull()?.let {
+                    coordinates(it.groupValues[2], it.groupValues[1])?.let { result -> return result }
                 }
             }
-        }
-
-        return null
-    }
-    
-    class PbNode(val id: Int, val type: Char, val value: String) {
-        val children = mutableListOf<PbNode>()
-        var parent: PbNode? = null
-
-        fun getTotalDescendantCount(): Int {
-            var count = children.size
-            for (child in children) {
-                count += child.getTotalDescendantCount()
-            }
-            return count
-        }
-
-        fun findLatestIncompleteNode(): PbNode {
-            if ((type == 'm' && (value.toIntOrNull() ?: 0) > getTotalDescendantCount()) || parent == null) {
-                return this
-            }
-            return parent!!.findLatestIncompleteNode()
-        }
-    }
-
-    private fun parseGoogleMapsData(dataStr: String): PbNode? {
-        val root = PbNode(0, 'r', "")
-        var currentNode = root
-        val elements = dataStr.removePrefix("data=").split("!").filter { it.isNotEmpty() }
-        
-        for (elem in elements) {
-            var i = 0
-            while (i < elem.length && elem[i].isDigit()) {
-                i++
-            }
-            if (i > 0 && i < elem.length) {
-                val idStr = elem.substring(0, i)
-                val typeChar = elem[i]
-                val valueStr = elem.substring(i + 1)
-                
-                val id = idStr.toIntOrNull()
-                if (id != null) {
-                    val node = PbNode(id, typeChar, valueStr)
-                    node.parent = currentNode
-                    currentNode.children.add(node)
-                    
-                    currentNode = node.findLatestIncompleteNode()
-                }
+            pinPair.findAll(data).lastOrNull()?.let {
+                coordinates(it.groupValues[1], it.groupValues[2])?.let { result -> return result }
             }
         }
-        return root
-    }
-
-    private fun findCoordinatesInTree(node: PbNode): Coordinates? {
-        // Look for typical Map Pins where 3d = Lat, 4d = Lon
-        val lat3d = node.children.find { it.id == 3 && it.type == 'd' }
-        val lon4d = node.children.find { it.id == 4 && it.type == 'd' }
-        if (lat3d != null && lon4d != null) {
-            val lat = lat3d.value.toDoubleOrNull()
-            val lon = lon4d.value.toDoubleOrNull()
-            if (lat != null && lon != null && lat >= -90.0 && lat <= 90.0 && lon >= -180.0 && lon <= 180.0) {
-                return Coordinates(lat, lon)
-            }
+        val place = uri.pathSegments.indexOf("place")
+        if (place >= 0) uri.pathSegments.getOrNull(place + 1)?.let { parsePair(it)?.let { result -> return result } }
+        if (uri.host == "maps.apple.com") {
+            uri.getQueryParameter("ll")?.let { parsePair(it)?.let { result -> return result } }
         }
-
-        // Look for Route destinations where 2d = Lat, 1d = Lon
-        val lon1d = node.children.find { it.id == 1 && it.type == 'd' }
-        val lat2d = node.children.find { it.id == 2 && it.type == 'd' }
-        if (lat2d != null && lon1d != null) {
-            val lat = lat2d.value.toDoubleOrNull()
-            val lon = lon1d.value.toDoubleOrNull()
-            if (lat != null && lon != null && lat >= -90.0 && lat <= 90.0 && lon >= -180.0 && lon <= 180.0) {
-                return Coordinates(lat, lon)
-            }
+        if (uri.host?.let { it == "openstreetmap.org" || it == "www.openstreetmap.org" } == true) {
+            val lat = uri.getQueryParameter("mlat")
+            val lon = uri.getQueryParameter("mlon")
+            if (lat != null && lon != null) return coordinates(lat, lon)
         }
-
-        // Deep Search (Reverse so we find the destination waypoints typically at the end of the arrays)
-        for (child in node.children.reversed()) {
-            val res = findCoordinatesInTree(child)
-            if (res != null) return res
-        }
+        // Viewport coordinates do not identify the place or route destination.
         return null
     }
 
     fun extractPlaceName(uri: Uri): String? {
-        val pathSegments = uri.pathSegments
-        val placeIndex = pathSegments.indexOf("place")
-        if (placeIndex != -1 && placeIndex + 1 < pathSegments.size) {
-            val nameSegment = pathSegments[placeIndex + 1]
-            val parts = nameSegment.split(",")
-            val isJustCoords = parts.size == 2 && parts[0].toDoubleOrNull() != null && parts[1].toDoubleOrNull() != null
-            if (!isJustCoords) {
-                return java.net.URLDecoder.decode(nameSegment.replace("+", " "), "UTF-8")
+        if (uri.toString().length > MAX_INPUT_LENGTH) return null
+        if (uri.scheme == "geo") {
+            val query = uri.encodedSchemeSpecificPart.substringAfter('?', "")
+            return Uri.parse("https://geo.invalid/?$query").getQueryParameter("q")
+                ?.takeIf { parsePair(it) == null && it.isNotBlank() }
+        }
+        if (!uri.isHierarchical) return null
+        val index = uri.pathSegments.indexOf("place")
+        if (index >= 0) {
+            uri.pathSegments.getOrNull(index + 1)?.replace('+', ' ')?.let {
+                if (parsePair(it) == null && it.isNotBlank()) return it
             }
         }
-        
-        uri.getQueryParameter("q")?.let { q ->
-            val parts = q.split(",")
-            val isJustCoords = parts.size == 2 && parts[0].toDoubleOrNull() != null && parts[1].toDoubleOrNull() != null
-            if (!isJustCoords) {
-                return java.net.URLDecoder.decode(q.replace("+", " "), "UTF-8")
+        for (key in listOf("destination", "query", "q")) {
+            uri.getQueryParameter(key)?.let {
+                if (parsePair(it) == null && it.isNotBlank()) return it
             }
         }
-        
         return null
     }
 
     fun extractUrlOrText(text: String): String {
-        val matcher = android.util.Patterns.WEB_URL.matcher(text)
-        if (matcher.find()) {
-            return matcher.group() ?: text
-        }
-        return text
+        if (text.length > MAX_INPUT_LENGTH) return ""
+        val trimmed = text.trim()
+        if (trimmed.startsWith("geo:")) return trimmed
+        val matcher = Patterns.WEB_URL.matcher(trimmed)
+        return if (matcher.find()) matcher.group() ?: trimmed else trimmed
     }
 }

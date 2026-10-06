@@ -14,7 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
@@ -27,11 +27,9 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val appSettings = AppSettings(this)
-
         setContent {
             MaterialTheme {
-                var currentScreen by remember { mutableStateOf(Screen.Navigation) }
+                var currentScreen by rememberSaveable { mutableStateOf(Screen.Navigation) }
                 
                 Scaffold(
                     bottomBar = {
@@ -58,8 +56,8 @@ class SettingsActivity : ComponentActivity() {
                         color = MaterialTheme.colorScheme.background
                     ) {
                         when (currentScreen) {
-                            Screen.Navigation -> NavigationScreen(appSettings)
-                            Screen.Settings -> SettingsScreen(appSettings)
+                            Screen.Navigation -> NavigationScreen()
+                            Screen.Settings -> SettingsScreen()
                         }
                     }
                 }

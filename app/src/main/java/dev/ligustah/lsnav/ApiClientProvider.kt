@@ -2,41 +2,41 @@ package dev.ligustah.lsnav
 
 import dev.ligustah.lsnav.api.generated.apis.NavigationApi
 import dev.ligustah.lsnav.api.generated.apis.ScootersApi
-import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.io.IOException
 
-class ApiClientProvider(private val baseUrl: String, private val token: String?) {
-    
-    private val okHttpClient: OkHttpClient by lazy {
-        val authInterceptor = Interceptor { chain ->
-            val requestBuilder = chain.request().newBuilder()
-            if (!token.isNullOrBlank()) {
-                requestBuilder.header("Authorization", "Bearer ${token.trim()}")
+class ApiClientProvider(baseUrl: String, token: String?, transport: OkHttpClient = OkHttpClient()) {
+    private val basePath = normalizeBaseUrl(baseUrl)
+    private val cancelled = AtomicBoolean(false)
+    val client: OkHttpClient = transport.newBuilder()
+        .callTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            if (cancelled.get()) throw IOException("Request cancelled")
+            val request = chain.request().newBuilder()
+            if (!token.isNullOrBlank()) request.header("Authorization", "Bearer ${token.trim()}")
+            chain.proceed(request.build())
+        }.build()
+
+    fun cancel() {
+        cancelled.set(true)
+        client.dispatcher.cancelAll()
+    }
+
+    fun getNavigationApi() = NavigationApi(basePath = basePath, client = client)
+    fun getScootersApi() = ScootersApi(basePath = basePath, client = client)
+
+    companion object {
+        fun normalizeBaseUrl(value: String): String {
+            val url = value.trim().toHttpUrlOrNull() ?: throw IllegalArgumentException("Enter a valid HTTPS server URL")
+            require(url.isHttps && url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null) {
+                "Use an HTTPS server URL without credentials, a query, or a fragment"
             }
-            chain.proceed(requestBuilder.build())
+            val path = url.encodedPath.trimEnd('/')
+            return url.newBuilder().encodedPath(if (path.endsWith("/api/v1")) path else "$path/api/v1")
+                .build().toString().trimEnd('/')
         }
-
-        OkHttpClient.Builder()
-            .addInterceptor(authInterceptor)
-            .build()
-    }
-
-    private fun formatBaseUrl(url: String): String {
-        val trimmed = url.trim()
-        return if (trimmed.endsWith("/api/v1")) {
-            trimmed
-        } else if (trimmed.endsWith("/api/v1/")) {
-            trimmed.removeSuffix("/")
-        } else {
-            "${trimmed.removeSuffix("/")}/api/v1"
-        }
-    }
-
-    fun getNavigationApi(): NavigationApi {
-        return NavigationApi(basePath = formatBaseUrl(baseUrl), client = okHttpClient)
-    }
-
-    fun getScootersApi(): ScootersApi {
-        return ScootersApi(basePath = formatBaseUrl(baseUrl), client = okHttpClient)
     }
 }

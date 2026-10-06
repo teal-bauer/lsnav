@@ -13,6 +13,7 @@ class ApiClientProvider(baseUrl: String, token: String?, transport: OkHttpClient
     private val cancelled = AtomicBoolean(false)
     val client: OkHttpClient = transport.newBuilder()
         .callTimeout(30, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
         .addInterceptor { chain ->
             if (cancelled.get()) throw IOException("Request cancelled")
             val request = chain.request().newBuilder()

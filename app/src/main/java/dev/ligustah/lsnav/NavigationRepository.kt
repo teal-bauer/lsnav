@@ -8,6 +8,7 @@ import org.openapitools.client.infrastructure.ClientException
 import org.openapitools.client.infrastructure.ServerException
 import java.io.IOException
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -39,18 +40,21 @@ class NavigationRepository(
     private suspend fun <T> request(configuration: AppConfiguration, block: (ApiClientProvider) -> T): T {
         val provider = providerFactory(configuration)
         return suspendCancellableCoroutine { continuation ->
-            val task = executor.submit {
-                try {
-                    val result = block(provider)
-                    if (continuation.isActive) continuation.resume(result)
-                } catch (error: Exception) {
-                    if (continuation.isActive) continuation.resumeWithException(error)
+            val task = FutureTask {
+                if (continuation.isActive) {
+                    try {
+                        val result = block(provider)
+                        if (continuation.isActive) continuation.resume(result)
+                    } catch (error: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
                 }
             }
             continuation.invokeOnCancellation {
                 provider.cancel()
                 task.cancel(true)
             }
+            executor.execute(task)
         }
     }
 

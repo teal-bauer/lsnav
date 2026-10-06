@@ -39,13 +39,18 @@ class NavigationViewModel @JvmOverloads constructor(
 
     init {
         viewModelScope.launch {
-            configurations.collect { config ->
-                if (config != mutableState.value.configuration) {
-                    refreshJob?.cancel()
-                    commandJob?.cancel()
-                    mutableState.value = mutableState.value.copy(configuration = config, destination = null, sending = false, error = null)
-                    refresh()
+            try {
+                configurations.collect { config ->
+                    if (config != mutableState.value.configuration) {
+                        refreshJob?.cancel()
+                        commandJob?.cancel()
+                        mutableState.value = mutableState.value.copy(configuration = config, destination = null, sending = false, error = null)
+                        refresh()
+                    }
                 }
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                mutableState.value = mutableState.value.copy(error = "Unable to load settings. Restart the app and retry.")
             }
         }
     }

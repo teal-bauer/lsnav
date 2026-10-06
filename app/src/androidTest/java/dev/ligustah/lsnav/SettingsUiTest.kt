@@ -1,6 +1,8 @@
 package dev.ligustah.lsnav
 
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -14,7 +16,9 @@ class SettingsUiTest {
 
     @Test fun settingsDraftSurvivesTabChangesAndRecreation() {
         compose.onNodeWithText("Settings", useUnmergedTree = true).performClick()
-        compose.waitForIdle()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("HTTPS server URL") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
         val field = compose.onNodeWithText("HTTPS server URL")
         field.performTextClearance()
         field.performTextInput("https://draft.example.org")

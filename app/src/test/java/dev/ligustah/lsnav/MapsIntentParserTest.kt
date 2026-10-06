@@ -132,6 +132,18 @@ class MapsIntentParserTest {
     }
 
     @Test
+    fun `geo altitude and encoded address query are supported`() {
+        assertEquals(Coordinates(52.52, 13.41), MapsIntentParser.extractCoordinates(Uri.parse("geo:52.52,13.41,100")))
+        assertEquals("C++", MapsIntentParser.extractPlaceName(Uri.parse("geo:0,0?q=C%2B%2B")))
+    }
+
+    @Test
+    fun `route path uses destination rather than origin`() {
+        assertEquals(Coordinates(48.137, 11.576), MapsIntentParser.extractCoordinates(Uri.parse("https://www.google.com/maps/dir/52.52,13.41/48.137,11.576/@50,12,8z")))
+        assertEquals("Munich Germany", MapsIntentParser.extractPlaceName(Uri.parse("https://www.google.com/maps/dir/Berlin/Munich+Germany/@50,12,8z")))
+    }
+
+    @Test
     fun `place names are decoded once`() {
         assertEquals("100% Coffee", MapsIntentParser.extractPlaceName(Uri.parse("https://www.google.com/maps/place/100%25+Coffee")))
         assertEquals("C++", MapsIntentParser.extractPlaceName(Uri.parse("https://www.google.com/maps?q=C%2B%2B")))

@@ -27,10 +27,10 @@ object MapsIntentParser {
             val query = value.substringAfter('?', "")
             val q = Uri.parse("https://geo.invalid/?$query").getQueryParameter("q")
             if (q != null) return parsePair(q)
-            return parsePair(value.substringBefore('?').substringBefore(';'))
+            return parsePair(value.substringBefore('?').substringBefore(';').split(',').take(2).joinToString(","))
         }
         if (!uri.isHierarchical) return null
-        for (key in listOf("destination", "query", "q")) {
+        for (key in listOf("destination", "query", "q", "daddr")) {
             uri.getQueryParameter(key)?.let { parsePair(it)?.let { result -> return result } }
         }
         val data = uri.pathSegments.firstOrNull { it.startsWith("data=") }
@@ -47,6 +47,11 @@ object MapsIntentParser {
         }
         val place = uri.pathSegments.indexOf("place")
         if (place >= 0) uri.pathSegments.getOrNull(place + 1)?.let { parsePair(it)?.let { result -> return result } }
+        val direction = uri.pathSegments.indexOf("dir")
+        if (direction >= 0) {
+            val endpoint = uri.pathSegments.drop(direction + 1).lastOrNull { !it.startsWith("@") && !it.startsWith("data=") }
+            endpoint?.let { parsePair(it)?.let { result -> return result } }
+        }
         if (uri.host == "maps.apple.com") {
             uri.getQueryParameter("ll")?.let { parsePair(it)?.let { result -> return result } }
         }
@@ -73,10 +78,15 @@ object MapsIntentParser {
                 if (parsePair(it) == null && it.isNotBlank()) return it
             }
         }
-        for (key in listOf("destination", "query", "q")) {
+        for (key in listOf("destination", "query", "q", "daddr")) {
             uri.getQueryParameter(key)?.let {
                 if (parsePair(it) == null && it.isNotBlank()) return it
             }
+        }
+        val direction = uri.pathSegments.indexOf("dir")
+        if (direction >= 0) {
+            val endpoint = uri.pathSegments.drop(direction + 1).lastOrNull { !it.startsWith("@") && !it.startsWith("data=") }
+            if (!endpoint.isNullOrBlank() && parsePair(endpoint) == null) return endpoint.replace('+', ' ')
         }
         return null
     }

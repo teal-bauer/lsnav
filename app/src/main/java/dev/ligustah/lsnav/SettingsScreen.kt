@@ -31,7 +31,7 @@ fun SettingsScreen(appSettings: AppSettings) {
     var successMessage by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        Text("LibreScoot Navigation Settings", style = MaterialTheme.typography.titleLarge)
+        Text("Librescoot Navigation Settings", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(

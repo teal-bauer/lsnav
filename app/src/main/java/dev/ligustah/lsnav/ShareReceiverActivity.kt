@@ -1,11 +1,11 @@
 package dev.ligustah.lsnav
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,15 +20,21 @@ class ShareReceiverActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        configureNavigationWindow(window, dark)
         val text = runCatching { MapsIntentParser.extractIntentText(intent) }.getOrNull()
         if (text.isNullOrBlank() || text.length > MapsIntentParser.MAX_INPUT_LENGTH) { finish(); return }
         model.start(text)
         setContent {
             val state by model.state.collectAsStateWithLifecycle()
-            val dark = isSystemInDarkTheme()
-            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-                Scaffold { padding ->
-                    Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            NavigationTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = MaterialTheme.colorScheme.background,
+                        contentWindowInsets = WindowInsets.safeDrawing
+                    ) { padding ->
+                        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("Confirm destination", style = MaterialTheme.typography.headlineMedium)
                         if (state.sent) Text("Destination sent to ${state.configuration.scooterName}.") else {
                             Text("Nothing is sent until you confirm.")
@@ -49,6 +55,7 @@ class ShareReceiverActivity : ComponentActivity() {
                         }
                         TextButton(onClick = { startActivity(Intent(this@ShareReceiverActivity, SettingsActivity::class.java)) }, enabled = !state.sending) { Text(if (state.configuration.isAuthenticated) "Account settings" else "Connect Sunshine") }
                         TextButton(onClick = { finish() }) { Text(if (state.sent) "Close" else "Cancel") }
+                        }
                     }
                 }
             }

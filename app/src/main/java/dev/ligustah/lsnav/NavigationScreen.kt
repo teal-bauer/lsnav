@@ -52,11 +52,11 @@ fun NavigationScreen(onSettings: () -> Unit, model: NavigationViewModel = viewMo
             personal.value?.let { saved ->
                 if (saved.favorites.isNotEmpty()) {
                     Text("Favorites", style = MaterialTheme.typography.titleLarge)
-                    saved.favorites.forEach { row -> PlaceRow(row.place.label, row.place.coordinates.display(), { pending = state.configuration to row.place }) }
+                    saved.favorites.forEach { row -> PlaceRow(row.place.label, row.place.coordinates.display(), { pending = state.configuration.accountKey to row.place }) }
                 }
                 if (saved.recent.isNotEmpty()) {
                     Text("Recent", style = MaterialTheme.typography.titleLarge)
-                    saved.recent.forEach { row -> PlaceRow(row.place.label, row.place.coordinates.display(), { pending = state.configuration to row.place }) }
+                    saved.recent.forEach { row -> PlaceRow(row.place.label, row.place.coordinates.display(), { pending = state.configuration.accountKey to row.place }) }
                 }
                 if (saved.favorites.isEmpty() && saved.recent.isEmpty()) Text("Your favorites and recent places will appear here.")
             }

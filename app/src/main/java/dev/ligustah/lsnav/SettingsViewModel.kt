@@ -64,6 +64,11 @@ class SettingsViewModel @JvmOverloads constructor(
         draft(mutableState.value.draft.copy(baseUrl = value, oauthSessionId = null, scooterId = null, scooterName = ""))
         mutableState.value = mutableState.value.copy(scooters = emptyList())
     }
+    fun chooseOnDemand() {
+        if (mutableState.value.saving) return
+        draft(mutableState.value.draft.copy(scooterId = null, scooterName = ""))
+    }
+
     fun select(scooter: Scooter) {
         if (mutableState.value.saving) return
         draft(mutableState.value.draft.copy(scooterId = scooter.id, scooterName = scooter.name))
@@ -104,7 +109,7 @@ class SettingsViewModel @JvmOverloads constructor(
                 val config = OAuthManager.get(getApplication()).complete(intent)
                 settings.saveConfiguration(config)
                 draft(config)
-                mutableState.value = mutableState.value.copy(scooters = emptyList(), loading = false, message = "Signed in. Fetch and select your scooter.")
+                mutableState.value = mutableState.value.copy(scooters = emptyList(), loading = false, message = "Signed in. Choose a default scooter or select one when navigating.")
                 fetch()
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) { authError(error) }

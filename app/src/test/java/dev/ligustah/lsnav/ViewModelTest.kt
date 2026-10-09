@@ -33,11 +33,19 @@ class ViewModelTest {
     private class FakeGateway : NavigationGateway {
         var writes = 0
         var clears = 0
+        val readIds = mutableListOf<Long?>()
+        val locationIds = mutableListOf<Long?>()
+        val locations = mutableMapOf<Long, CompletableDeferred<List<PlaceResult>>>()
+        var lastWrite: AppConfiguration? = null
         val read = CompletableDeferred<Destination>()
         val write = CompletableDeferred<Unit>()
-        override suspend fun scooters(configuration: AppConfiguration): List<Scooter> = emptyList()
-        override suspend fun destination(configuration: AppConfiguration): Destination = read.await()
-        override suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult) { writes++; write.await() }
+        override suspend fun scooters(configuration: AppConfiguration): List<Scooter> = listOf(Scooter("Test scooter", id = 1), Scooter("Other scooter", id = 2))
+        override suspend fun destination(configuration: AppConfiguration): Destination { readIds.add(configuration.scooterId); return read.await() }
+        override suspend fun savedLocations(configuration: AppConfiguration): List<PlaceResult> {
+            locationIds.add(configuration.scooterId)
+            return locations[configuration.scooterId]?.await() ?: emptyList()
+        }
+        override suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult) { writes++; lastWrite = configuration; write.await() }
         override suspend fun clearDestination(configuration: AppConfiguration) { clears++; write.await() }
     }
 
@@ -86,6 +94,61 @@ class ViewModelTest {
         runCurrent()
         configurations.value = config.copy(scooterId = 2)
         model.confirm()
+        runCurrent()
+        assertEquals(0, gateway.writes)
+        assertNotNull(model.state.value.error)
+    }
+
+    @Test fun `share chooses a scooter on demand without saving a default`() = runTest(dispatcher) {
+        val gateway = FakeGateway()
+        val configurations = MutableStateFlow(config.copy(scooterId = null, scooterName = ""))
+        val model = ShareViewModel(application, SavedStateHandle(), gateway, resolver, configurations)
+        model.start("geo:52.52,13.41")
+        runCurrent()
+        assertEquals(1, model.state.value.places.size)
+        assertNull(model.state.value.configuration.scooterId)
+        model.confirm()
+        runCurrent()
+        assertEquals(0, gateway.writes)
+        model.selectScooter(model.state.value.scooters.last())
+        model.confirm()
+        runCurrent()
+        assertEquals(2L, gateway.lastWrite?.scooterId)
+        assertNull(configurations.value.scooterId)
+        gateway.write.complete(Unit)
+        runCurrent()
+        assertTrue(model.state.value.sent)
+    }
+
+    @Test fun `navigation loads saved locations only for the selected scooter and ignores cancelled reads`() = runTest(dispatcher) {
+        val gateway = FakeGateway()
+        gateway.read.complete(Destination())
+        val oldLocations = CompletableDeferred<List<PlaceResult>>()
+        val otherPlace = PlaceResult(Coordinates(48.85, 2.35), "Paris")
+        gateway.locations[1] = oldLocations
+        gateway.locations[2] = CompletableDeferred(listOf(otherPlace))
+        val configurations = MutableStateFlow(config.copy(scooterId = null, scooterName = ""))
+        val model = NavigationViewModel(application, SavedStateHandle(), gateway, resolver, configurations)
+        runCurrent()
+        assertTrue(gateway.readIds.isEmpty())
+        model.selectScooter(model.state.value.scooters.first())
+        runCurrent()
+        assertEquals(listOf(1L), gateway.locationIds)
+        model.selectScooter(model.state.value.scooters.last())
+        runCurrent()
+        assertEquals(listOf(otherPlace), model.state.value.savedLocations)
+        oldLocations.complete(listOf(place))
+        runCurrent()
+        assertEquals(listOf(otherPlace), model.state.value.savedLocations)
+        assertNull(configurations.value.scooterId)
+    }
+
+    @Test fun `navigation rejects a confirmation for a different scooter`() = runTest(dispatcher) {
+        val gateway = FakeGateway()
+        val model = NavigationViewModel(application, SavedStateHandle(), gateway, resolver, MutableStateFlow(config))
+        runCurrent()
+        model.selectScooter(model.state.value.scooters.last())
+        model.send(place, config)
         runCurrent()
         assertEquals(0, gateway.writes)
         assertNotNull(model.state.value.error)

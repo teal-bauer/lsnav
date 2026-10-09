@@ -27,6 +27,16 @@ class RepositoryTest {
             assertEquals("Bearer test-token", request.getHeader("Authorization"))
         }
     }
+    @Test fun `saved locations are read for the selected scooter with user auth`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"locations":[{"slot":0,"latitude":52.52,"longitude":13.41,"label":"Home"},{"slot":1,"latitude":200,"longitude":13,"label":"Invalid"}]}"""))
+            val places = NavigationRepository { provider(server) }.savedLocations(config.copy(scooterId = 42))
+            assertEquals(listOf(PlaceResult(Coordinates(52.52, 13.41), "Home")), places)
+            val request = server.takeRequest(5, TimeUnit.SECONDS)!!
+            assertEquals("/api/v1/scooters/42/locations", request.path)
+            assertEquals("Bearer test-token", request.getHeader("Authorization"))
+        }
+    }
     @Test fun `authorization failures expose a useful message`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"forbidden","message":"Location permission required"}}"""))

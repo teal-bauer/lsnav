@@ -20,7 +20,7 @@ class ShareReceiverActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val text = runCatching {
-            if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") intent.getStringExtra(Intent.EXTRA_TEXT) else null
+            MapsIntentParser.extractIntentText(intent)
         }.getOrNull()
         if (text == null || text.isBlank() || text.length > MapsIntentParser.MAX_INPUT_LENGTH) {
             finish()
@@ -35,7 +35,10 @@ class ShareReceiverActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Confirm destination", style = MaterialTheme.typography.headlineSmall)
                         if (state.sent) Text("Destination sent to scooter.") else {
-                            if (state.configuration.isReady) Text("Scooter: ${state.configuration.scooterName}")
+                            ScooterPicker(state.configuration, state.scooters, !state.loading && !state.sending, model::selectScooter)
+                            if (state.configuration.isAuthenticated && state.configuration.scooterId == null) {
+                                Text(if (state.scooters.isEmpty()) "No accessible scooters loaded. Retry or check Settings." else "Choose a scooter before sending.")
+                            }
                             if (state.loading || state.sending) CircularProgressIndicator()
                             state.places.forEachIndexed { index, place ->
                                 Row(Modifier.fillMaxWidth()) {
@@ -44,9 +47,10 @@ class ShareReceiverActivity : ComponentActivity() {
                                 }
                             }
                             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                            Button(onClick = model::confirm, enabled = !state.loading && !state.sending && state.places.isNotEmpty()) { Text("Send destination") }
+                            Button(onClick = model::confirm, enabled = !state.loading && !state.sending && state.configuration.isReady && state.places.isNotEmpty()) { Text("Send destination") }
                             OutlinedButton(onClick = model::retry, enabled = !state.loading && !state.sending) { Text("Resolve again / retry") }
                         }
+                        TextButton(onClick = { startActivity(Intent(this@ShareReceiverActivity, SettingsActivity::class.java)) }, enabled = !state.sending) { Text("Settings") }
                         TextButton(onClick = { finish() }) { Text(if (state.sent) "Close" else "Cancel") }
                     }
                 }

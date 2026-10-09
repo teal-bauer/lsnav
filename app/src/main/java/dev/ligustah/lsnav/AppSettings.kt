@@ -18,7 +18,8 @@ data class AppConfiguration(
     val oauthSessionId: String? = null,
     val oauthClientId: String = OAuthManager.DEFAULT_CLIENT_ID
 ) {
-    val isReady: Boolean get() = (token.isNotBlank() || oauthSessionId != null) && scooterId != null
+    val isAuthenticated: Boolean get() = token.isNotBlank() || oauthSessionId != null
+    val isReady: Boolean get() = isAuthenticated && scooterId != null
 }
 
 class AppSettings(context: Context) {

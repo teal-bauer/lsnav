@@ -1,6 +1,7 @@
 package dev.ligustah.lsnav
 
 import android.net.Uri
+import android.content.Intent
 import android.util.Patterns
 
 object MapsIntentParser {
@@ -8,6 +9,15 @@ object MapsIntentParser {
     private val pair = Regex("^\\s*([-+]?\\d+(?:\\.\\d+)?)\\s*,\\s*([-+]?\\d+(?:\\.\\d+)?)(?:\\s*\\([^)]*\\))?\\s*$")
     private val routePair = Regex("!1d([-+]?\\d+(?:\\.\\d+)?)!2d([-+]?\\d+(?:\\.\\d+)?)(?=!|$)")
     private val pinPair = Regex("!3d([-+]?\\d+(?:\\.\\d+)?)!4d([-+]?\\d+(?:\\.\\d+)?)(?=!|$)")
+
+    fun extractIntentText(intent: Intent): String? {
+        val text = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data?.takeIf { it.scheme == "geo" }?.toString()
+            Intent.ACTION_SEND -> if (intent.type == "text/plain") intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() else null
+            else -> null
+        }
+        return text?.takeIf { it.isNotBlank() && it.length <= MAX_INPUT_LENGTH }
+    }
 
     fun parsePair(text: String): Coordinates? {
         val match = pair.matchEntire(text) ?: return null

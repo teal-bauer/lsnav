@@ -34,7 +34,11 @@ fun SettingsScreen(model: SettingsViewModel = viewModel(), onSignIn: (String, St
         Button(onClick = model::fetch, enabled = !state.loading && !state.saving && (state.draft.token.isNotBlank() || state.draft.oauthSessionId != null)) { Text("Fetch scooters / retry") }
         if (state.loading || state.saving) CircularProgressIndicator()
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        if (state.scooters.isNotEmpty()) Text("Select scooter:")
+        Text("Default scooter (optional):")
+        Row(Modifier.fillMaxWidth()) {
+            RadioButton(selected = state.draft.scooterId == null, onClick = model::chooseOnDemand, enabled = !state.saving)
+            Text("Choose a scooter when navigating", Modifier.padding(top = 12.dp))
+        }
         state.scooters.forEach { scooter ->
             Row(Modifier.fillMaxWidth()) {
                 RadioButton(selected = scooter.id == state.draft.scooterId,

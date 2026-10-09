@@ -14,6 +14,7 @@ import kotlin.coroutines.resumeWithException
 
 interface NavigationGateway {
     suspend fun scooters(configuration: AppConfiguration): List<Scooter>
+    suspend fun savedLocations(configuration: AppConfiguration): List<PlaceResult> = emptyList()
     suspend fun destination(configuration: AppConfiguration): Destination
     suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult)
     suspend fun clearDestination(configuration: AppConfiguration)
@@ -24,6 +25,12 @@ class NavigationRepository(
     private val providerFactory: (AppConfiguration) -> ApiClientProvider = { ApiClientProvider(it.baseUrl, it.token) }
 ) : NavigationGateway {
     override suspend fun scooters(configuration: AppConfiguration) = request(configuration) { it.getScootersApi().listScooters() }
+    override suspend fun savedLocations(configuration: AppConfiguration) = request(configuration) {
+        it.getNavigationApi().getSavedLocations(requireNotNull(configuration.scooterId)).locations.mapNotNull { location ->
+            val coordinates = Coordinates(location.latitude, location.longitude)
+            if (coordinates.isValid()) PlaceResult(coordinates, location.label) else null
+        }
+    }
     override suspend fun destination(configuration: AppConfiguration) = request(configuration) {
         it.getNavigationApi().getDestination(requireNotNull(configuration.scooterId))
     }

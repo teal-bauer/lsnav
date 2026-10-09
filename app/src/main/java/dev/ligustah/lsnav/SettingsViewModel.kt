@@ -101,7 +101,7 @@ class SettingsViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             try {
                 val config = OAuthManager.get(getApplication()).complete(intent)
-                settings.saveProfile(AppProfile(config, false))
+                settings.saveProfile(AppProfile(config, mutableState.value.profile.onboardingComplete))
                 draft(config)
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) { authError(error)
@@ -116,7 +116,7 @@ class SettingsViewModel @JvmOverloads constructor(
                 require(draft.token.isNotBlank()) { "Enter your API token." }
                 val config = draft.copy(token = draft.token.trim(), baseUrl = ApiClientProvider.normalizeBaseUrl(draft.baseUrl), oauthSessionId = null, scooterId = null, scooterName = "")
                 val scooters = gateway.scooters(config, true)
-                settings.saveProfile(AppProfile(config, false))
+                settings.saveProfile(AppProfile(config, mutableState.value.profile.onboardingComplete))
                 draft(config)
                 mutableState.value = mutableState.value.copy(scooters = RemoteData.loaded(scooters))
             } catch (error: CancellationException) { throw error

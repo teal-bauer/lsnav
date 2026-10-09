@@ -15,6 +15,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 fun SettingsScreen(model: SettingsViewModel = viewModel(), onSignIn: (String, String) -> Unit = { _, _ -> }, onBack: () -> Unit = {}) {
     val state by model.state.collectAsStateWithLifecycle()
     var advanced by remember { mutableStateOf(false) }
+    var editConnection by remember { mutableStateOf(false) }
     val authenticated = state.profile.configuration.isAuthenticated
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         TextButton(onClick = onBack) { Text("‹  ${if (authenticated) "Back" else "Welcome"}") }
@@ -34,6 +35,17 @@ fun SettingsScreen(model: SettingsViewModel = viewModel(), onSignIn: (String, St
             }
         } else {
             Text("Connected to ${state.profile.configuration.baseUrl}", style = MaterialTheme.typography.bodyLarge)
+            TextButton(onClick = { editConnection = !editConnection }) { Text(if (editConnection) "Hide connection options" else "Change connection or reconnect") }
+            if (editConnection) {
+                OutlinedTextField(state.draft.baseUrl, model::updateUrl, label = { Text("Sunshine server (HTTPS)") }, enabled = !state.busy, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(state.draft.oauthClientId, model::updateClientId, label = { Text("Public OAuth client ID") }, enabled = !state.busy, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button(onClick = { if (model.beginLogin()) onSignIn(state.draft.baseUrl, state.draft.oauthClientId) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Reconnect with Sunshine") }
+                HorizontalDivider()
+                Text("Or replace the connection with a manual API token.")
+                OutlinedTextField(state.draft.token, model::updateToken, label = { Text("API token") }, visualTransformation = PasswordVisualTransformation(),
+                    enabled = !state.busy, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedButton(onClick = model::connectManual, enabled = !state.busy && state.draft.token.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Connect with token") }
+            }
             Text("Choose an optional default scooter. You can choose a different scooter for each destination.")
             Text("Default scooter", style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth()) {

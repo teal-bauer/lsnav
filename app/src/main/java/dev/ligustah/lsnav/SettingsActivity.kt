@@ -10,7 +10,10 @@ import kotlinx.coroutines.launch
 import net.openid.appauth.AuthorizationService
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
@@ -52,7 +55,7 @@ class SettingsActivity : ComponentActivity() {
                 val onboarding = !settings.profile.onboardingComplete
                 val destination = if (onboarding) Screen.Settings else screen
                 BackHandler(enabled = destination == Screen.Settings && !onboarding) { screen = Screen.Navigation }
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), color = MaterialTheme.colorScheme.background) {
                     when (destination) {
                         Screen.Navigation -> NavigationScreen(onSettings = { screen = Screen.Settings })
                         Screen.Settings -> SettingsScreen(settingsModel, ::signIn) {

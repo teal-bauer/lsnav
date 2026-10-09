@@ -5,18 +5,30 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun NavigationScreen(onSettings: () -> Unit, model: NavigationViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, model) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) model.refreshIfStale()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var pending by remember { mutableStateOf<Pair<AppConfiguration, PlaceResult>?>(null) }
     var pendingClear by remember { mutableStateOf<AppConfiguration?>(null) }
     LaunchedEffect(state.configuration.accountKey) { pending = null; pendingClear = null }
@@ -24,7 +36,12 @@ fun NavigationScreen(onSettings: () -> Unit, model: NavigationViewModel = viewMo
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column { Text("Navigate", style = MaterialTheme.typography.headlineMedium); Text("Choose a place to send to your scooter") }
-            IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "Account and settings") }
+            Row {
+                IconButton(onClick = model::refresh, enabled = state.configuration.isAuthenticated && !state.sending) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh places and scooter data")
+                }
+                IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "Account and settings") }
+            }
         }
         if (!state.configuration.isAuthenticated) {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

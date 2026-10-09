@@ -73,6 +73,16 @@ class NavigationViewModel @JvmOverloads constructor(
                 mutableState.value = mutableState.value.copy(error = "Unable to load settings. Restart the app and retry.")
             }
         }
+        viewModelScope.launch {
+            gateway.changes.collect { change ->
+                val current = mutableState.value.configuration
+                if (current.isReady && change.configuration.accountKey == current.accountKey &&
+                    change.configuration.scooterId == current.scooterId) {
+                    mutableState.value = mutableState.value.copy(destination = mutableState.value.destination.copy(updatedAt = 0))
+                    if (!mutableState.value.sending) refreshDestination(current)
+                }
+            }
+        }
     }
 
     private fun cancelResources() {
@@ -92,13 +102,19 @@ class NavigationViewModel @JvmOverloads constructor(
             try {
                 val value = gateway.scooters(config, forceRefresh).distinctBy { it.id }
                 if (generation == scooterGeneration && storedConfiguration?.accountKey == config.accountKey) {
-                    val selectedExists = config.scooterId == null || value.any { it.id == config.scooterId }
-                    mutableState.value = mutableState.value.copy(
+                    val current = mutableState.value
+                    val selectedId = current.configuration.scooterId
+                    val selectedExists = selectedId == null || value.any { it.id == selectedId }
+                    mutableState.value = current.copy(
                         scooters = RemoteData.loaded(value),
-                        configuration = if (selectedExists) mutableState.value.configuration else config.copy(scooterId = null, scooterName = ""),
-                        destination = if (selectedExists) mutableState.value.destination else RemoteData(),
-                        savedLocations = if (selectedExists) mutableState.value.savedLocations else RemoteData()
+                        configuration = if (selectedExists) current.configuration else current.configuration.copy(scooterId = null, scooterName = ""),
+                        destination = if (selectedExists) current.destination else RemoteData(),
+                        savedLocations = if (selectedExists) current.savedLocations else RemoteData()
                     )
+                    if (!selectedExists) {
+                        destinationGeneration++; destinationJob?.cancel()
+                        locationsGeneration++; locationsJob?.cancel()
+                    }
                 }
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
@@ -120,11 +136,28 @@ class NavigationViewModel @JvmOverloads constructor(
         refresh()
     }
 
+    fun refreshIfStale() {
+        val current = mutableState.value
+        val config = current.configuration
+        if (!config.isAuthenticated || current.sending) return
+        if (current.scooters.stale(30_000)) fetchScooters()
+        if (current.personalPlaces.stale(60_000)) refreshPersonalPlaces()
+        if (config.isReady) {
+            if (current.destination.stale(30_000)) refreshDestination(config)
+            if (current.savedLocations.stale(60_000)) refreshSavedLocations(config)
+        }
+    }
+
     fun refresh() {
-        val config = mutableState.value.configuration
-        if (!config.isReady || mutableState.value.sending) return
-        refreshDestination(config)
-        refreshSavedLocations(config)
+        val current = mutableState.value
+        val config = current.configuration
+        if (!config.isAuthenticated || current.sending) return
+        fetchScooters(forceRefresh = true)
+        refreshPersonalPlaces(forceRefresh = true)
+        if (config.isReady) {
+            refreshDestination(config)
+            refreshSavedLocations(config)
+        }
     }
 
     private fun refreshDestination(config: AppConfiguration) {
@@ -215,7 +248,11 @@ class NavigationViewModel @JvmOverloads constructor(
             mutableState.value = mutableState.value.copy(error = "Scooter or settings changed. Confirm the destination again.")
             return
         }
-        if (!config.isReady || mutableState.value.sending) return
+        val availableScooter = config.scooterId != null && mutableState.value.scooters.value.orEmpty().any { it.id == config.scooterId }
+        if (!config.isReady || !availableScooter || mutableState.value.sending) {
+            if (config.isReady && !availableScooter) mutableState.value = mutableState.value.copy(error = "The selected scooter is no longer available. Choose a scooter and confirm again.")
+            return
+        }
         if (place != null && !place.coordinates.isValid()) return
         destinationGeneration++; destinationJob?.cancel()
         locationsGeneration++; locationsJob?.cancel()

@@ -14,18 +14,16 @@ import org.junit.Test
 class SettingsUiTest {
     @get:Rule val compose = createAndroidComposeRule<SettingsActivity>()
 
-    @Test fun settingsDraftSurvivesTabChangesAndRecreation() {
-        compose.onNodeWithText("Settings", useUnmergedTree = true).performClick()
+    @Test fun connectionDraftSurvivesActivityRecreation() {
+        compose.onNodeWithText("Advanced connection options").performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("HTTPS server URL") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("Sunshine server (HTTPS)") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
         }
-        val field = compose.onNodeWithText("HTTPS server URL")
+        val field = compose.onNodeWithText("Sunshine server (HTTPS)")
         field.performTextClearance()
         field.performTextInput("https://draft.example.org")
-        compose.onNodeWithText("Navigation", useUnmergedTree = true).performClick()
-        compose.onNodeWithText("Settings", useUnmergedTree = true).performClick()
-        compose.onNodeWithText("HTTPS server URL").assertTextContains("https://draft.example.org")
+        compose.onNodeWithText("Sunshine server (HTTPS)").assertTextContains("https://draft.example.org")
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("HTTPS server URL").assertTextContains("https://draft.example.org")
+        compose.onNodeWithText("Sunshine server (HTTPS)").assertTextContains("https://draft.example.org")
     }
 }

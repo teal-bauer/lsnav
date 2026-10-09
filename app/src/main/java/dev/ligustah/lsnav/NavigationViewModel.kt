@@ -25,7 +25,7 @@ data class NavigationState(
 class NavigationViewModel @JvmOverloads constructor(
     application: Application,
     private val savedState: SavedStateHandle,
-    private val gateway: NavigationGateway = NavigationRepository(),
+    private val gateway: NavigationGateway = NavigationRepository(application),
     private val resolver: CoordinateResolver = CoordinateResolver(application),
     private val configurations: kotlinx.coroutines.flow.Flow<AppConfiguration> = AppSettings(application).configuration
 ) : AndroidViewModel(application) {

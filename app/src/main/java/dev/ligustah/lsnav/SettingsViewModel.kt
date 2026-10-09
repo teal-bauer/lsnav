@@ -23,7 +23,7 @@ data class SettingsState(
 class SettingsViewModel @JvmOverloads constructor(
     application: Application,
     private val savedState: SavedStateHandle,
-    private val gateway: NavigationGateway = NavigationRepository()
+    private val gateway: NavigationGateway = NavigationRepository(application)
 ) : AndroidViewModel(application) {
     private val settings = AppSettings(application)
     private val mutableState = MutableStateFlow(SettingsState())
@@ -35,7 +35,9 @@ class SettingsViewModel @JvmOverloads constructor(
                 val config = settings.configuration.first()
                 val draft = AppConfiguration(savedState["token"] ?: config.token, savedState["url"] ?: config.baseUrl,
                     if (savedState.contains("url")) savedState["scooter"] else config.scooterId,
-                    savedState["name"] ?: config.scooterName)
+                    savedState["name"] ?: config.scooterName,
+                    if (savedState.contains("oauthSession")) savedState["oauthSession"] else config.oauthSessionId,
+                    savedState["clientId"] ?: config.oauthClientId)
                 mutableState.value = SettingsState(draft = draft, loading = false)
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) { mutableState.value = mutableState.value.copy(loading = false, error = "Unable to load settings. Restart the app and retry.") }
@@ -47,17 +49,19 @@ class SettingsViewModel @JvmOverloads constructor(
         savedState["url"] = value.baseUrl
         savedState["scooter"] = value.scooterId
         savedState["name"] = value.scooterName
+        savedState["oauthSession"] = value.oauthSessionId
+        savedState["clientId"] = value.oauthClientId
         mutableState.value = mutableState.value.copy(draft = value, message = null, error = null)
     }
 
     fun updateToken(value: String) {
         if (mutableState.value.saving) return
-        draft(mutableState.value.draft.copy(token = value, scooterId = null, scooterName = ""))
+        draft(mutableState.value.draft.copy(token = value, oauthSessionId = null, scooterId = null, scooterName = ""))
         mutableState.value = mutableState.value.copy(scooters = emptyList())
     }
     fun updateUrl(value: String) {
         if (mutableState.value.saving) return
-        draft(mutableState.value.draft.copy(baseUrl = value, scooterId = null, scooterName = ""))
+        draft(mutableState.value.draft.copy(baseUrl = value, oauthSessionId = null, scooterId = null, scooterName = ""))
         mutableState.value = mutableState.value.copy(scooters = emptyList())
     }
     fun select(scooter: Scooter) {
@@ -72,7 +76,7 @@ class SettingsViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             try {
                 ApiClientProvider.normalizeBaseUrl(config.baseUrl)
-                require(config.token.isNotBlank()) { "Enter an API token" }
+                require(config.token.isNotBlank() || config.oauthSessionId != null) { "Sign in or enter an API token" }
                 val scooters = gateway.scooters(config)
                 if (config == mutableState.value.draft) {
                     mutableState.value = mutableState.value.copy(scooters = scooters)
@@ -85,6 +89,37 @@ class SettingsViewModel @JvmOverloads constructor(
         }
     }
 
+    fun updateClientId(value: String) {
+        draft(mutableState.value.draft.copy(oauthClientId = value, oauthSessionId = null, scooterId = null, scooterName = ""))
+    }
+
+    fun authError(error: Exception) {
+        mutableState.value = mutableState.value.copy(error = userMessage(error), loading = false)
+    }
+
+    fun completeLogin(intent: android.content.Intent?) {
+        mutableState.value = mutableState.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            try {
+                val config = OAuthManager.get(getApplication()).complete(intent)
+                settings.saveConfiguration(config)
+                draft(config)
+                mutableState.value = mutableState.value.copy(scooters = emptyList(), loading = false, message = "Signed in. Fetch and select your scooter.")
+                fetch()
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) { authError(error) }
+        }
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            settings.saveConfiguration(AppConfiguration(baseUrl = mutableState.value.draft.baseUrl))
+            OAuthManager.get(getApplication()).clear()
+            draft(AppConfiguration(baseUrl = mutableState.value.draft.baseUrl))
+            mutableState.value = mutableState.value.copy(scooters = emptyList(), message = "Signed out of this app.")
+        }
+    }
+
     fun save() {
         if (mutableState.value.loading || mutableState.value.saving) return
         val config = mutableState.value.draft
@@ -92,8 +127,8 @@ class SettingsViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             try {
                 val url = ApiClientProvider.normalizeBaseUrl(config.baseUrl)
-                require(config.token.isNotBlank()) { "Enter an API token" }
-                settings.saveSettings(config.token.trim(), url, config.scooterId, config.scooterName)
+                require(config.token.isNotBlank() || config.oauthSessionId != null) { "Sign in or enter an API token" }
+                settings.saveConfiguration(config.copy(token = config.token.trim(), baseUrl = url))
                 draft(config.copy(token = config.token.trim(), baseUrl = url))
                 mutableState.value = mutableState.value.copy(message = "Settings saved.")
             } catch (error: CancellationException) { throw error

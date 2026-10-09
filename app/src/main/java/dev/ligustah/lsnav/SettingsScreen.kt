@@ -12,17 +12,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun SettingsScreen(model: SettingsViewModel = viewModel()) {
+fun SettingsScreen(model: SettingsViewModel = viewModel(), onSignIn: (String, String) -> Unit = { _, _ -> }) {
     val state by model.state.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Librescoot Navigation Settings", style = MaterialTheme.typography.headlineSmall)
         OutlinedTextField(state.draft.baseUrl, model::updateUrl, label = { Text("HTTPS server URL") },
             enabled = !state.loading && !state.saving, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(state.draft.token, model::updateToken, label = { Text("API token") },
+        Button(onClick = { onSignIn(state.draft.baseUrl, state.draft.oauthClientId) }, enabled = !state.loading && !state.saving) {
+            Text(if (state.draft.oauthSessionId == null) "Sign in to Sunshine" else "Sign in again / switch account")
+        }
+        if (state.draft.oauthSessionId != null) {
+            Text("Signed in with OAuth. Access tokens refresh automatically.")
+            TextButton(onClick = model::signOut, enabled = !state.loading && !state.saving) { Text("Sign out") }
+        }
+        OutlinedTextField(state.draft.oauthClientId, model::updateClientId, label = { Text("Public OAuth client ID (custom servers)") },
+            enabled = !state.loading && !state.saving, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(state.draft.token, model::updateToken, label = { Text("Manual API token (alternative)") },
             visualTransformation = PasswordVisualTransformation(), enabled = !state.loading && !state.saving,
             singleLine = true, modifier = Modifier.fillMaxWidth())
-        Button(onClick = model::fetch, enabled = !state.loading && !state.saving && state.draft.token.isNotBlank()) { Text("Fetch scooters / retry") }
+        Button(onClick = model::fetch, enabled = !state.loading && !state.saving && (state.draft.token.isNotBlank() || state.draft.oauthSessionId != null)) { Text("Fetch scooters / retry") }
         if (state.loading || state.saving) CircularProgressIndicator()
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (state.scooters.isNotEmpty()) Text("Select scooter:")

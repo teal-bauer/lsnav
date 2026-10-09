@@ -20,6 +20,7 @@ interface NavigationGateway {
 }
 
 class NavigationRepository(
+    private val context: android.content.Context? = null,
     private val providerFactory: (AppConfiguration) -> ApiClientProvider = { ApiClientProvider(it.baseUrl, it.token) }
 ) : NavigationGateway {
     override suspend fun scooters(configuration: AppConfiguration) = request(configuration) { it.getScootersApi().listScooters() }
@@ -38,6 +39,18 @@ class NavigationRepository(
     }
 
     private suspend fun <T> request(configuration: AppConfiguration, block: (ApiClientProvider) -> T): T {
+        if (configuration.oauthSessionId == null) return execute(configuration, block)
+        val manager = OAuthManager.get(context ?: throw OAuthLoginRequired())
+        val token = manager.accessToken(configuration)
+        return try {
+            execute(configuration.copy(token = token), block)
+        } catch (error: ClientException) {
+            if (error.statusCode != 401) throw error
+            execute(configuration.copy(token = manager.accessToken(configuration, forceRefresh = true)), block)
+        }
+    }
+
+    private suspend fun <T> execute(configuration: AppConfiguration, block: (ApiClientProvider) -> T): T {
         val provider = providerFactory(configuration)
         return suspendCancellableCoroutine { continuation ->
             val task = FutureTask {
@@ -64,6 +77,7 @@ class NavigationRepository(
 }
 
 fun userMessage(error: Exception): String = when (error) {
+    is OAuthLoginRequired -> "Your Sunshine login has expired or been revoked. Sign in again in Settings."
     is ClientException -> when (error.statusCode) {
         401 -> "Your API token is expired or invalid. Update it in Settings."
         403 -> "This token or account lacks permission for this scooter. Check its sharing permissions."

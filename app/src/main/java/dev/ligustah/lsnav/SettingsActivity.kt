@@ -2,6 +2,11 @@ package dev.ligustah.lsnav
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import net.openid.appauth.AuthorizationService
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,6 +29,25 @@ import androidx.compose.material.icons.filled.Home
 enum class Screen { Navigation, Settings }
 
 class SettingsActivity : ComponentActivity() {
+    private val settingsModel: SettingsViewModel by viewModels()
+    private val authorizationService by lazy { AuthorizationService(this) }
+    private val authorizationResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        settingsModel.completeLogin(it.data)
+    }
+
+    private fun signIn(baseUrl: String, clientId: String) {
+        lifecycleScope.launch {
+            try {
+                authorizationResult.launch(OAuthManager.get(this@SettingsActivity).authorizationIntent(baseUrl, clientId, authorizationService))
+            } catch (error: kotlinx.coroutines.CancellationException) { throw error
+            } catch (error: Exception) { settingsModel.authError(error) }
+        }
+    }
+
+    override fun onDestroy() {
+        authorizationService.dispose()
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +81,7 @@ class SettingsActivity : ComponentActivity() {
                     ) {
                         when (currentScreen) {
                             Screen.Navigation -> NavigationScreen()
-                            Screen.Settings -> SettingsScreen()
+                            Screen.Settings -> SettingsScreen(settingsModel, ::signIn)
                         }
                     }
                 }

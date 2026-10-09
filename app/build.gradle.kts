@@ -15,6 +15,7 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["appAuthRedirectScheme"] = "dev.ligustah.lsnav"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -78,6 +79,7 @@ tasks.matching { it.name.startsWith("preBuild") }.configureEach {
 }
 
 dependencies {
+    implementation("net.openid:appauth:0.11.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation("com.squareup.moshi:moshi-adapters:1.15.1")

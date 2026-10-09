@@ -1,8 +1,11 @@
 package dev.ligustah.lsnav
 
-import dev.ligustah.lsnav.api.generated.models.Destination
 import dev.ligustah.lsnav.api.generated.models.DestinationInput
-import dev.ligustah.lsnav.api.generated.models.Scooter
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.openapitools.client.infrastructure.ClientException
 import org.openapitools.client.infrastructure.ServerException
@@ -13,9 +16,11 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 interface NavigationGateway {
-    suspend fun scooters(configuration: AppConfiguration): List<Scooter>
+    val changes: Flow<DestinationChange> get() = emptyFlow()
+    suspend fun scooters(configuration: AppConfiguration, forceRefresh: Boolean = false): List<ScooterSummary>
+    suspend fun personalPlaces(configuration: AppConfiguration, forceRefresh: Boolean = false): PersonalPlaces = PersonalPlaces()
     suspend fun savedLocations(configuration: AppConfiguration): List<PlaceResult> = emptyList()
-    suspend fun destination(configuration: AppConfiguration): Destination
+    suspend fun destination(configuration: AppConfiguration): NavigationTarget
     suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult)
     suspend fun clearDestination(configuration: AppConfiguration)
 }
@@ -24,7 +29,34 @@ class NavigationRepository(
     private val context: android.content.Context? = null,
     private val providerFactory: (AppConfiguration) -> ApiClientProvider = { ApiClientProvider(it.baseUrl, it.token) }
 ) : NavigationGateway {
-    override suspend fun scooters(configuration: AppConfiguration) = request(configuration) { it.getScootersApi().listScooters() }
+    private data class Cache<T>(val account: AppConfiguration, val value: T, val time: Long = System.currentTimeMillis())
+    private val scootersMutex = Mutex()
+    private val placesMutex = Mutex()
+    private var scootersCache: Cache<List<ScooterSummary>>? = null
+    private var placesCache: Cache<PersonalPlaces>? = null
+    override val changes = MutableSharedFlow<DestinationChange>(extraBufferCapacity = 16)
+
+    override suspend fun scooters(configuration: AppConfiguration, forceRefresh: Boolean): List<ScooterSummary> = scootersMutex.withLock {
+        scootersCache?.takeIf { !forceRefresh && it.account == configuration.accountKey && System.currentTimeMillis() - it.time < 30_000 }?.let { return@withLock it.value }
+        val result = request(configuration) { provider -> provider.getScootersApi().listScooters().mapNotNull { scooter ->
+            scooter.id?.let { ScooterSummary(it, scooter.name.ifBlank { "Scooter $it" }, scooter.online, scooter.state) }
+        }.distinctBy { it.id } }
+        scootersCache = Cache(configuration.accountKey, result)
+        result
+    }
+    override suspend fun personalPlaces(configuration: AppConfiguration, forceRefresh: Boolean): PersonalPlaces = placesMutex.withLock {
+        placesCache?.takeIf { !forceRefresh && it.account == configuration.accountKey && System.currentTimeMillis() - it.time < 60_000 }?.let { return@withLock it.value }
+        val result = request(configuration) { provider ->
+            val response = provider.getNavigationApi().getPersonalPlaces()
+            fun places(values: List<dev.ligustah.lsnav.api.generated.models.UserSavedPlace>) = values.mapNotNull {
+                val coordinates = Coordinates(it.latitude, it.longitude)
+                if (coordinates.isValid()) SavedPlace(it.id, PlaceResult(coordinates, it.label.ifBlank { coordinates.display() })) else null
+            }
+            PersonalPlaces(places(response.favorites), places(response.recent))
+        }
+        placesCache = Cache(configuration.accountKey, result)
+        result
+    }
     override suspend fun savedLocations(configuration: AppConfiguration) = request(configuration) {
         it.getNavigationApi().getSavedLocations(requireNotNull(configuration.scooterId)).locations.mapNotNull { location ->
             val coordinates = Coordinates(location.latitude, location.longitude)
@@ -32,7 +64,9 @@ class NavigationRepository(
         }
     }
     override suspend fun destination(configuration: AppConfiguration) = request(configuration) {
-        it.getNavigationApi().getDestination(requireNotNull(configuration.scooterId))
+        val response = it.getNavigationApi().getDestination(requireNotNull(configuration.scooterId))
+        val coordinates = if (response.latitude != null && response.longitude != null) Coordinates(response.latitude, response.longitude).takeIf { value -> value.isValid() } else null
+        NavigationTarget(coordinates?.let { value -> PlaceResult(value, response.address?.takeIf { label -> label.isNotBlank() } ?: value.display()) })
     }
     override suspend fun setDestination(configuration: AppConfiguration, place: PlaceResult) {
         require(place.coordinates.isValid()) { "Invalid destination coordinates" }
@@ -40,9 +74,16 @@ class NavigationRepository(
             it.getNavigationApi().setDestination(requireNotNull(configuration.scooterId),
                 DestinationInput(place.coordinates.latitude, place.coordinates.longitude, place.label))
         }
+        changes.tryEmit(DestinationChange(configuration))
     }
     override suspend fun clearDestination(configuration: AppConfiguration) {
         request(configuration) { it.getNavigationApi().clearDestination(requireNotNull(configuration.scooterId)) }
+        changes.tryEmit(DestinationChange(configuration))
+    }
+
+    suspend fun clearCaches() {
+        scootersMutex.withLock { scootersCache = null }
+        placesMutex.withLock { placesCache = null }
     }
 
     private suspend fun <T> request(configuration: AppConfiguration, block: (ApiClientProvider) -> T): T {
@@ -80,6 +121,10 @@ class NavigationRepository(
 
     companion object {
         private val executor = Executors.newFixedThreadPool(4)
+        @Volatile private var instance: NavigationRepository? = null
+        fun get(context: android.content.Context): NavigationRepository = instance ?: synchronized(this) {
+            instance ?: NavigationRepository(context.applicationContext).also { instance = it }
+        }
     }
 }
 

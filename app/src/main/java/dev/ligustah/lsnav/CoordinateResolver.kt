@@ -20,12 +20,6 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-data class Coordinates(val latitude: Double, val longitude: Double) {
-    fun isValid() = latitude.isFinite() && longitude.isFinite() && latitude in -90.0..90.0 && longitude in -180.0..180.0
-}
-
-data class PlaceResult(val coordinates: Coordinates, val label: String)
-
 fun interface LocationLookup {
     suspend fun search(query: String): List<PlaceResult>
 }
@@ -74,7 +68,7 @@ class CoordinateResolver(
         val input = MapsIntentParser.extractUrlOrText(text)
         MapsIntentParser.parsePair(input)?.let { return listOf(PlaceResult(it, input)) }
         var uri = Uri.parse(input)
-        MapsIntentParser.extractCoordinates(uri)?.let { return listOf(PlaceResult(it, "$it")) }
+        MapsIntentParser.extractCoordinates(uri)?.let { return listOf(PlaceResult(it, it.display())) }
         if (isShortLink(uri)) {
             val expanded = expandShortLink(input)
             uri = Uri.parse(expanded)

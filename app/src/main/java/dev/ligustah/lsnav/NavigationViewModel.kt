@@ -4,23 +4,19 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import dev.ligustah.lsnav.api.generated.models.Destination
-import dev.ligustah.lsnav.api.generated.models.Scooter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-data class NavigationState(
+ data class NavigationState(
     val configuration: AppConfiguration = AppConfiguration(),
-    val scooters: List<Scooter> = emptyList(),
-    val loadingScooters: Boolean = false,
-    val savedLocations: List<PlaceResult> = emptyList(),
-    val savedLocationsError: String? = null,
-    val loading: Boolean = false,
+    val scooters: RemoteData<List<ScooterSummary>> = RemoteData(),
+    val destination: RemoteData<NavigationTarget> = RemoteData(),
+    val savedLocations: RemoteData<List<PlaceResult>> = RemoteData(),
+    val personalPlaces: RemoteData<PersonalPlaces> = RemoteData(),
     val sending: Boolean = false,
-    val destination: Destination? = null,
     val query: String = "",
     val results: List<PlaceResult> = emptyList(),
     val searching: Boolean = false,
@@ -30,7 +26,7 @@ data class NavigationState(
 class NavigationViewModel @JvmOverloads constructor(
     application: Application,
     private val savedState: SavedStateHandle,
-    private val gateway: NavigationGateway = NavigationRepository(application),
+    private val gateway: NavigationGateway = NavigationRepository.get(application),
     private val resolver: CoordinateResolver = CoordinateResolver(application),
     private val configurations: kotlinx.coroutines.flow.Flow<AppConfiguration> = AppSettings(application).configuration
 ) : AndroidViewModel(application) {
@@ -38,10 +34,15 @@ class NavigationViewModel @JvmOverloads constructor(
     val state: StateFlow<NavigationState> = mutableState
     private var storedConfiguration: AppConfiguration? = null
     private var scootersJob: Job? = null
-    private var refreshJob: Job? = null
+    private var destinationJob: Job? = null
+    private var locationsJob: Job? = null
+    private var personalPlacesJob: Job? = null
     private var commandJob: Job? = null
     private var searchJob: Job? = null
-    private var refreshGeneration = 0
+    private var scooterGeneration = 0
+    private var destinationGeneration = 0
+    private var locationsGeneration = 0
+    private var personalGeneration = 0
     private var searchGeneration = 0
 
     init {
@@ -49,81 +50,132 @@ class NavigationViewModel @JvmOverloads constructor(
             try {
                 configurations.collect { config ->
                     if (config != storedConfiguration) {
+                        val old = storedConfiguration
                         storedConfiguration = config
-                        refreshGeneration++
-                        refreshJob?.cancel()
+                        cancelResources()
                         commandJob?.cancel()
-                        mutableState.value = mutableState.value.copy(configuration = config, scooters = emptyList(), savedLocations = emptyList(),
-                            savedLocationsError = null, destination = null, sending = false, loading = false, error = null)
-                        refresh()
-                        fetchScooters()
+                        mutableState.value = mutableState.value.copy(
+                            configuration = config, sending = false,
+                            scooters = if (old?.accountKey == config.accountKey) mutableState.value.scooters else RemoteData(),
+                            destination = RemoteData(), savedLocations = RemoteData(),
+                            personalPlaces = if (old?.accountKey == config.accountKey) mutableState.value.personalPlaces else RemoteData(),
+                            error = null
+                        )
+                        if (config.isAuthenticated) {
+                            fetchScooters()
+                            refreshPersonalPlaces()
+                            refresh()
+                        }
                     }
                 }
             } catch (error: CancellationException) { throw error
-            } catch (error: Exception) {
+            } catch (_: Exception) {
                 mutableState.value = mutableState.value.copy(error = "Unable to load settings. Restart the app and retry.")
             }
         }
     }
 
-    fun fetchScooters() {
+    private fun cancelResources() {
+        scooterGeneration++; scootersJob?.cancel()
+        destinationGeneration++; destinationJob?.cancel()
+        locationsGeneration++; locationsJob?.cancel()
+        personalGeneration++; personalPlacesJob?.cancel()
+    }
+
+    fun fetchScooters(forceRefresh: Boolean = false) {
         val config = storedConfiguration ?: return
-        if (!config.isAuthenticated || mutableState.value.sending) return
+        if (!config.isAuthenticated) return
+        val generation = ++scooterGeneration
         scootersJob?.cancel()
-        mutableState.value = mutableState.value.copy(loadingScooters = true)
+        mutableState.value = mutableState.value.copy(scooters = mutableState.value.scooters.refreshing())
         scootersJob = viewModelScope.launch {
             try {
-                val scooters = gateway.scooters(config).filter { it.id != null }.distinctBy { it.id }
-                if (storedConfiguration == config) {
-                    mutableState.value = mutableState.value.copy(scooters = scooters)
-                    if (scooters.none { it.id == mutableState.value.configuration.scooterId }) {
-                        refreshGeneration++
-                        refreshJob?.cancel()
-                        mutableState.value = mutableState.value.copy(configuration = config.copy(scooterId = null, scooterName = ""),
-                            destination = null, savedLocations = emptyList(), savedLocationsError = null, loading = false)
-                    }
+                val value = gateway.scooters(config, forceRefresh).distinctBy { it.id }
+                if (generation == scooterGeneration && storedConfiguration?.accountKey == config.accountKey) {
+                    val selectedExists = config.scooterId == null || value.any { it.id == config.scooterId }
+                    mutableState.value = mutableState.value.copy(
+                        scooters = RemoteData.loaded(value),
+                        configuration = if (selectedExists) mutableState.value.configuration else config.copy(scooterId = null, scooterName = ""),
+                        destination = if (selectedExists) mutableState.value.destination else RemoteData(),
+                        savedLocations = if (selectedExists) mutableState.value.savedLocations else RemoteData()
+                    )
                 }
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
-                if (storedConfiguration == config) mutableState.value = mutableState.value.copy(error = userMessage(error))
+                if (generation == scooterGeneration) mutableState.value = mutableState.value.copy(scooters = mutableState.value.scooters.failed(userMessage(error)))
             } finally {
-                if (storedConfiguration == config) mutableState.value = mutableState.value.copy(loadingScooters = false)
+                if (generation == scooterGeneration) mutableState.value = mutableState.value.copy(scooters = mutableState.value.scooters.copy(loading = false))
             }
         }
     }
 
-    fun selectScooter(scooter: Scooter) {
+    fun selectScooter(scooter: ScooterSummary) {
         val state = mutableState.value
-        if (state.sending || scooter.id == null || scooter !in state.scooters) return
-        refreshGeneration++
-        refreshJob?.cancel()
-        mutableState.value = state.copy(configuration = state.configuration.copy(scooterId = scooter.id, scooterName = scooter.name),
-            destination = null, savedLocations = emptyList(), savedLocationsError = null, loading = false, error = null)
+        if (state.sending || scooter !in state.scooters.value.orEmpty()) return
+        val config = state.configuration.copy(scooterId = scooter.id, scooterName = scooter.name)
+        if (config == state.configuration) return
+        mutableState.value = state.copy(configuration = config, destination = RemoteData(), savedLocations = RemoteData(), error = null)
+        destinationGeneration++; destinationJob?.cancel()
+        locationsGeneration++; locationsJob?.cancel()
         refresh()
     }
 
     fun refresh() {
         val config = mutableState.value.configuration
         if (!config.isReady || mutableState.value.sending) return
-        val generation = ++refreshGeneration
-        refreshJob?.cancel()
-        mutableState.value = mutableState.value.copy(loading = true, error = null)
-        refreshJob = viewModelScope.launch {
+        refreshDestination(config)
+        refreshSavedLocations(config)
+    }
+
+    private fun refreshDestination(config: AppConfiguration) {
+        val generation = ++destinationGeneration
+        destinationJob?.cancel()
+        mutableState.value = mutableState.value.copy(destination = mutableState.value.destination.refreshing())
+        destinationJob = viewModelScope.launch {
             try {
-                val destination = gateway.destination(config)
-                if (generation == refreshGeneration) mutableState.value = mutableState.value.copy(destination = destination)
+                val value = gateway.destination(config)
+                if (generation == destinationGeneration && mutableState.value.configuration == config) mutableState.value = mutableState.value.copy(destination = RemoteData.loaded(value))
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
-                if (generation == refreshGeneration) mutableState.value = mutableState.value.copy(error = userMessage(error))
-            }
-            try {
-                val locations = gateway.savedLocations(config)
-                if (generation == refreshGeneration) mutableState.value = mutableState.value.copy(savedLocations = locations, savedLocationsError = null)
-            } catch (error: CancellationException) { throw error
-            } catch (error: Exception) {
-                if (generation == refreshGeneration) mutableState.value = mutableState.value.copy(savedLocations = emptyList(), savedLocationsError = userMessage(error))
+                if (generation == destinationGeneration) mutableState.value = mutableState.value.copy(destination = mutableState.value.destination.failed(userMessage(error)))
             } finally {
-                if (generation == refreshGeneration) mutableState.value = mutableState.value.copy(loading = false)
+                if (generation == destinationGeneration) mutableState.value = mutableState.value.copy(destination = mutableState.value.destination.copy(loading = false))
+            }
+        }
+    }
+
+    private fun refreshSavedLocations(config: AppConfiguration) {
+        val generation = ++locationsGeneration
+        locationsJob?.cancel()
+        mutableState.value = mutableState.value.copy(savedLocations = mutableState.value.savedLocations.refreshing())
+        locationsJob = viewModelScope.launch {
+            try {
+                val value = gateway.savedLocations(config)
+                if (generation == locationsGeneration && mutableState.value.configuration == config) mutableState.value = mutableState.value.copy(savedLocations = RemoteData.loaded(value))
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                if (generation == locationsGeneration) mutableState.value = mutableState.value.copy(savedLocations = mutableState.value.savedLocations.failed(userMessage(error)))
+            } finally {
+                if (generation == locationsGeneration) mutableState.value = mutableState.value.copy(savedLocations = mutableState.value.savedLocations.copy(loading = false))
+            }
+        }
+    }
+
+    fun refreshPersonalPlaces(forceRefresh: Boolean = false) {
+        val config = storedConfiguration ?: return
+        if (!config.isAuthenticated) return
+        val generation = ++personalGeneration
+        personalPlacesJob?.cancel()
+        mutableState.value = mutableState.value.copy(personalPlaces = mutableState.value.personalPlaces.refreshing())
+        personalPlacesJob = viewModelScope.launch {
+            try {
+                val value = gateway.personalPlaces(config, forceRefresh)
+                if (generation == personalGeneration && storedConfiguration?.accountKey == config.accountKey) mutableState.value = mutableState.value.copy(personalPlaces = RemoteData.loaded(value))
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                if (generation == personalGeneration) mutableState.value = mutableState.value.copy(personalPlaces = mutableState.value.personalPlaces.failed(userMessage(error)))
+            } finally {
+                if (generation == personalGeneration) mutableState.value = mutableState.value.copy(personalPlaces = mutableState.value.personalPlaces.copy(loading = false))
             }
         }
     }
@@ -134,10 +186,7 @@ class NavigationViewModel @JvmOverloads constructor(
         searchJob?.cancel()
         mutableState.value = mutableState.value.copy(query = value, results = emptyList(), searching = false)
         if (value.length < 3) return
-        searchJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(500)
-            search()
-        }
+        searchJob = viewModelScope.launch { kotlinx.coroutines.delay(500); search() }
     }
 
     fun search() {
@@ -167,15 +216,14 @@ class NavigationViewModel @JvmOverloads constructor(
             return
         }
         if (!config.isReady || mutableState.value.sending) return
-        refreshGeneration++
-        refreshJob?.cancel()
-        mutableState.value = mutableState.value.copy(sending = true, loading = false, error = null)
+        if (place != null && !place.coordinates.isValid()) return
+        destinationGeneration++; destinationJob?.cancel()
+        locationsGeneration++; locationsJob?.cancel()
+        mutableState.value = mutableState.value.copy(sending = true, error = null)
         commandJob = viewModelScope.launch {
             try {
                 if (place == null) gateway.clearDestination(config) else gateway.setDestination(config, place)
-                mutableState.value = mutableState.value.copy(destination = place?.let {
-                    Destination(it.coordinates.latitude, it.coordinates.longitude, it.label)
-                })
+                if (mutableState.value.configuration == config) refreshDestination(config)
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) { mutableState.value = mutableState.value.copy(error = userMessage(error))
             } finally { mutableState.value = mutableState.value.copy(sending = false) }

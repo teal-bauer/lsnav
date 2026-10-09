@@ -195,6 +195,24 @@
           "status": { "type": "string", "enum": ["success"] }
         }
       },
+      "UserSavedPlace": {
+        "type": "object",
+        "required": ["id", "latitude", "longitude", "label"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "latitude": { "type": "number", "format": "double" },
+          "longitude": { "type": "number", "format": "double" },
+          "label": { "type": "string" }
+        }
+      },
+      "UserPlaces": {
+        "type": "object",
+        "required": ["favorites", "recent"],
+        "properties": {
+          "favorites": { "type": "array", "items": { "$ref": "#/components/schemas/UserSavedPlace" } },
+          "recent": { "type": "array", "items": { "$ref": "#/components/schemas/UserSavedPlace" } }
+        }
+      },
       "SavedLocation": {
         "type": "object",
         "required": ["slot", "latitude", "longitude", "label"],
@@ -1141,6 +1159,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "/saved_destinations": {
+      "get": {
+        "summary": "Get the signed-in user's favorites and recent places",
+        "description": "Requires read scope. Places belong to the user, not a scooter.",
+        "operationId": "getPersonalPlaces",
+        "tags": ["Navigation"],
+        "responses": {
+          "200": { "description": "Personal favorites and recent places", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserPlaces" } } } },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Insufficient scope" }
         }
       }
     },

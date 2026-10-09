@@ -2,29 +2,25 @@ package dev.ligustah.lsnav
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import net.openid.appauth.AuthorizationService
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Home
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 enum class Screen { Navigation, Settings }
 
@@ -44,44 +40,24 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        authorizationService.dispose()
-        super.onDestroy()
-    }
+    override fun onDestroy() { authorizationService.dispose(); super.onDestroy() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                var currentScreen by rememberSaveable { mutableStateOf(Screen.Navigation) }
-                
-                Scaffold(
-                    bottomBar = {
-                        NavigationBar {
-                            NavigationBarItem(
-                                icon = { Icon(Icons.Default.Home, contentDescription = "Navigation") },
-                                label = { Text("Navigation") },
-                                selected = currentScreen == Screen.Navigation,
-                                onClick = { currentScreen = Screen.Navigation }
-                            )
-                            NavigationBarItem(
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") },
-                                selected = currentScreen == Screen.Settings,
-                                onClick = { currentScreen = Screen.Settings }
-                            )
-                        }
-                    }
-                ) { innerPadding ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        when (currentScreen) {
-                            Screen.Navigation -> NavigationScreen()
-                            Screen.Settings -> SettingsScreen(settingsModel, ::signIn)
+            val settings by settingsModel.state.collectAsStateWithLifecycle()
+            val dark = isSystemInDarkTheme()
+            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
+                var screen by rememberSaveable { mutableStateOf(Screen.Navigation) }
+                val onboarding = !settings.profile.onboardingComplete
+                val destination = if (onboarding) Screen.Settings else screen
+                BackHandler(enabled = destination == Screen.Settings && !onboarding) { screen = Screen.Navigation }
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    when (destination) {
+                        Screen.Navigation -> NavigationScreen(onSettings = { screen = Screen.Settings })
+                        Screen.Settings -> SettingsScreen(settingsModel, ::signIn) {
+                            screen = Screen.Navigation
+                            if (onboarding && settings.profile.onboardingComplete) screen = Screen.Navigation
                         }
                     }
                 }
